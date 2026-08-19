@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>3D Music Dancer</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Three.js через importmap (ES modules, без бандлера) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <div id="app">
+    <div id="mobile-top-area">
+      <div id="scene-container">
+        <div id="scene-loading">
+          <div class="loading-spinner"></div>
+        </div>
+      </div>
+
+      <!-- Мобильная карточка "сейчас играет" — квадратная сцена + название/
+           исполнитель под ней (десктоп продолжает показывать название в
+           #player-secondary, эта разметка скрыта на десктопе через
+           .mobile-only-control, см. style.css). -->
+      <div id="track-info-mobile" class="mobile-only-control">
+        <div id="track-title-mobile">
+          <span id="track-title-text"></span>
+        </div>
+        <div id="track-artist-mobile"></div>
+      </div>
+
+      <div id="audio-debug" hidden>
+        <div>volume <span id="dbg-volume">0.00</span></div>
+        <div>bass <span id="dbg-bass">0.00</span></div>
+        <div>mid <span id="dbg-mid">0.00</span></div>
+        <div>treble <span id="dbg-treble">0.00</span></div>
+        <div>intensity <span id="dbg-intensity">0.00</span></div>
+        <div>beat <span id="dbg-beat-dot"></span></div>
+      </div>
+
+      <div id="dance-controls" aria-label="Character & dance pool controls">
+        <div id="character-stack"></div>
+        <div id="avatar-picker" hidden></div>
+      </div>
+
+      <div id="player" aria-label="Audio player">
+        <div id="player-transport">
+          <!-- Мобильные кнопки плейлиста (shuffle/prev/next/repeat) — скрыты
+               на десктопе через .mobile-only-control (см. style.css), там нет
+               отдельного UI под них, но JS-логика плейлиста работает
+               одинаково везде, просто на десктопе нет кнопок для неё. -->
+          <button id="shuffle-btn" class="mobile-only-control transport-icon-btn" aria-label="Shuffle" aria-pressed="false" title="Перемешать порядок треков">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+          </button>
+          <!-- Пустой разделитель — только для того, чтобы принудительно
+               перенести кнопки плейлиста на свою (третью) строку на
+               мобильном (flex-basis:100%, нулевой высоты, невидимый).
+               Без него пришлось бы вешать flex-basis:100% на сам shuffle-btn,
+               что искажало бы его собственную ширину. -->
+          <div id="transport-row-break" class="mobile-only-control" aria-hidden="true"></div>
+          <button id="prev-track-btn" class="mobile-only-control transport-icon-btn" aria-label="Previous track" title="Предыдущий трек">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+          </button>
+
+          <button id="play-btn" class="icon-btn" aria-label="Play" disabled>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+
+          <button id="next-track-btn" class="mobile-only-control transport-icon-btn" aria-label="Next track" title="Следующий трек">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+          </button>
+          <button id="repeat-btn" class="mobile-only-control transport-icon-btn" aria-label="Repeat" aria-pressed="false" title="Повтор плейлиста">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+          </button>
+
+          <span id="time-current" class="time">00:00</span>
+          <div id="progress-wrap">
+            <canvas id="waveform-canvas"></canvas>
+            <input id="progress" type="range" min="0" max="100" value="0" step="0.1" disabled />
+          </div>
+          <span id="time-duration" class="time">00:00</span>
+        </div>
+
+        <!-- Полоска-хендл для свайпа списка треков вверх — мобильная. -->
+        <button id="playlist-drag-handle" class="mobile-only-control" aria-label="Открыть список треков" aria-expanded="false">
+          <span class="handle-bar"></span>
+        </button>
+
+        <div id="player-secondary">
+          <label id="volume-wrap">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/></svg>
+            <input id="volume" type="range" min="0" max="1" step="0.01" value="1" />
+          </label>
+
+          <button id="choose-audio-btn">Choose Audio</button>
+          <input id="audio-file-input" type="file" multiple hidden />
+
+          <button id="waveform-toggle" class="text-toggle-btn" aria-pressed="false" title="Переключить вид прогресс-бара">〜</button>
+
+          <span id="track-name"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Список треков — выезжает снизу поверх/вместо нижней части экрана
+         при свайпе #playlist-drag-handle вверх. Мобильный, десктоп его не
+         видит (.mobile-only-control). -->
+    <div id="playlist-sheet" class="mobile-only-control" aria-hidden="true">
+      <button id="playlist-add-btn">+ Add</button>
+      <div id="playlist-items"></div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
