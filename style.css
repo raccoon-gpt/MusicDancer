@@ -703,7 +703,13 @@ input[type="range"]:disabled::-webkit-slider-thumb {
      этот блок его не трогает, там всё как было, одна строка. */
   #player-transport {
     flex-wrap: wrap;
-    gap: 6px 10px;
+    /* row-gap теперь 0 (было 6px) — gap у flex-контейнера НЕ зависит от
+       margin на элементах и держит минимальное расстояние сам по себе,
+       поэтому margin-top на #transport-row-break ниже не действовал
+       вообще, ни на -10px, ни на -40px. Вместо gap по вертикали —
+       margin-top вручную на первом элементе каждой новой строки, тогда
+       расстояние перед КАЖДОЙ строкой можно задавать отдельно. */
+    gap: 0 10px;
   }
 
   /* Ряд 1 — прогресс-бар на всю ширину (flex-basis:100% форсирует
@@ -714,9 +720,11 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   }
 
   /* Ряд 2 — текущее время слева, длительность справа (margin-left:auto
-     раздвигает их по краям одной строки). */
+     раздвигает их по краям одной строки). margin-top — отступ ПЕРЕД
+     этой строкой (раньше был row-gap, теперь вручную). */
   #time-current {
     order: 2;
+    margin-top: 6px;
   }
   #time-duration {
     order: 3;
@@ -739,7 +747,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     order: 4;
     flex-basis: 100%;
     height: 0;
-    margin-top: -40px; /* приподнимает ряд кнопок ближе к времени/длительности трека */
+    margin-top: -10px; /* приподнимает ряд кнопок ближе к времени/длительности трека */
   }
   #shuffle-btn {
     display: flex;
