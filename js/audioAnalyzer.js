@@ -24,6 +24,7 @@ export function createAudioAnalyzer(audioElement) {
   // ВАЖНО: createMediaElementSource можно вызвать только ОДИН раз на элемент —
   // поэтому createAudioAnalyzer тоже должен вызываться один раз за всё приложение.
   const source = audioCtx.createMediaElementSource(audioElement);
+  const gainNode = audioCtx.createGain();
   const analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.2; // намеренно низкое — почти "сырые" данные
@@ -43,7 +44,8 @@ export function createAudioAnalyzer(audioElement) {
   analyser.minDecibels = -70;
   analyser.maxDecibels = -20;
 
-  source.connect(analyser);
+  source.connect(gainNode);
+  gainNode.connect(analyser);
   analyser.connect(audioCtx.destination); // без этого звук замолчит — граф оборвётся
 
   const freqData = new Uint8Array(analyser.frequencyBinCount);
@@ -132,7 +134,30 @@ export function createAudioAnalyzer(audioElement) {
     return bars;
   }
 
-  return { audioCtx, resume, getFeatures, getSpectrumBars };
+  /**
+   * Буст громкости сверх обычного audio.volume (у того потолок 1.0,
+   * дальше браузер физически не пускает). GainNode, в отличие от
+   * audio.volume, может усиливать сигнал выше исходного — ставим ДО
+   * analyser в графе (source → gain → analyser → destination), так что
+   * анализ (детекция бита, спектр для волны) тоже "чувствует" усиленный
+   * сигнал, не только динамик/наушники — логично, раз на слух звук
+   * действительно громче.
+   *
+   * ВАЖНО (осознанный выбор, без защиты): просто GainNode, без
+   * компрессора/лимитера следом. Смастерённая музыка часто уже сидит
+   * близко к максимальной громкости — буст выше ~1.3-1.5x почти
+   * гарантированно даёт хрип/треск на пиках (clipping). Если понадобится
+   * убрать искажения — нужен ещё DynamicsCompressorNode между gainNode и
+   * analyser, отдельная доработка.
+   *
+   * @param {number} factor - 1 = обычная громкость (как сейчас), 2.5 =
+   *   максимум (в 2.5 раза сильнее системного максимума).
+   */
+  function setBoost(factor) {
+    gainNode.gain.value = factor;
+  }
+
+  return { audioCtx, resume, getFeatures, getSpectrumBars, setBoost };
 }
 
 /**
