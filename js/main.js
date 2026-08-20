@@ -1600,7 +1600,7 @@ playlistAddBtn.addEventListener("click", () => fileInput.click());
 // раз при загрузке страницы.
 (async function loadDefaultTestTrack() {
   try {
-    const response = await fetch("assets/audio/default-track.mp3");
+    const response = await fetch("assets/default-track.mp3"); // прямо в assets/, без подпапки audio/ — проще грузить на GitHub через мобильный интерфейс
     const blob = await response.blob();
     const file = new File([blob], "Dorofeeva - Додайте світла (minus).mp3", { type: blob.type || "audio/mpeg" });
     const { title, artist } = parseTrackName(file.name);
