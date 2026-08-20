@@ -481,17 +481,16 @@ applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "100";
-  slider.max = "2500"; // 25× — подняли с 2.5×, тот прирост оказался почти неразличим на слух
+  slider.max = "10000"; // 100× — 25× оказалось еле заметно даже с лимитером
   slider.step = "1";
   slider.value = "100";
-  slider.title = "Буст громкости сверх системной (до 25×) — GainNode, без защиты от искажений на пиках";
+  slider.title = "Буст громкости сверх системной (до 100×) — GainNode + лимитер";
   slider.style.flex = "1 1 auto";
 
   slider.addEventListener("input", () => {
     const factor = Number(slider.value) / 100;
     volumeBoostFactor = factor;
     label.textContent = `🔊 ${factor.toFixed(1)}×`;
-    console.log("[volumeBoost] слайдер подвинут:", factor, " analyzer существует:", !!analyzer);
     analyzer?.setBoost(factor); // если analyzer ещё не создан (play не нажимали) — применится позже, см. ensureAnalyzerReady
   });
 
