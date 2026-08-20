@@ -150,8 +150,9 @@ export function createAudioAnalyzer(audioElement) {
    * убрать искажения — нужен ещё DynamicsCompressorNode между gainNode и
    * analyser, отдельная доработка.
    *
-   * @param {number} factor - 1 = обычная громкость (как сейчас), 2.5 =
-   *   максимум (в 2.5 раза сильнее системного максимума).
+   * @param {number} factor - 1 = обычная громкость (как сейчас), 25 =
+   *   максимум (в 25 раз сильнее системного максимума — поднято с
+   *   изначальных 2.5×, тот прирост оказался почти неразличим на слух).
    */
   function setBoost(factor) {
     gainNode.gain.value = factor;
