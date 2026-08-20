@@ -1013,19 +1013,67 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     overflow-y: auto;
   }
 
+  /* Строка плейлиста в попапе — теперь не одна <button>, а <div>-
+     контейнер (флекс-строка) с ТРЕМЯ независимыми кнопками внутри: имя
+     (растягивается, переключает на этот плейлист), карандаш
+     (переименовать), крестик (удалить). Та же причина, что и у строки
+     трека в основном списке — вложенные <button> внутри <button>
+     невалидны. */
   .playlists-popup-item {
-    text-align: left;
-    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
     border-radius: 10px;
-    border: none;
     background: rgba(255, 255, 255, 0.05);
-    color: #d5d8dd;
-    font-size: 14px;
-    cursor: pointer;
   }
 
   .playlists-popup-item.active {
     background: rgba(185, 90, 247, 0.18);
+  }
+
+  .playlists-popup-item.active .playlists-popup-item-select {
+    color: #ecd3ff;
+  }
+
+  .playlists-popup-item-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: #d5d8dd;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .playlists-popup-item-edit,
+  .playlists-popup-item-delete {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: #8a8f98;
+    cursor: pointer;
+  }
+
+  .playlists-popup-item-delete:active {
+    background: rgba(255, 90, 90, 0.25);
+    color: #ff8a8a;
+  }
+
+  .playlists-popup-item-edit:active {
+    background: rgba(185, 90, 247, 0.25);
     color: #ecd3ff;
   }
 
