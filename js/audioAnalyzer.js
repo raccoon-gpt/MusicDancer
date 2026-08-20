@@ -42,8 +42,16 @@ export function createAudioAnalyzer(audioElement) {
   //   release — как быстро отпускает после пика (не мгновенно — резкий
   //     release звучит как "накачка"/pumping, дёрганая громкость)
   const compressor = audioCtx.createDynamicsCompressor();
-  compressor.threshold.value = -6;
-  compressor.knee.value = 6;
+  // threshold=-6dB (было) держал сигнал у потолка НИЖЕ, чем у трека
+  // часто бывает и без всякого буста (смастерённая музыка сегодня часто
+  // уже сидит в районе -1..-3dB на пиках) — весь конвейер буст+лимитер
+  // мог звучать тише или так же, как оригинал, независимо от значения
+  // буста, просто потому что лимитер всё придавливал к заниженному
+  // потолку. -1dB — стандартная величина для "мастеринг-лимитера":
+  // бо́льшая часть сигнала проходит с ПОЛНЫМ усилением от буста, лимитер
+  // подрезает только самые пики прямо у края, а не давит заранее.
+  compressor.threshold.value = -1;
+  compressor.knee.value = 3;
   compressor.ratio.value = 20;
   compressor.attack.value = 0.003;
   compressor.release.value = 0.25;
