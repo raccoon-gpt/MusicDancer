@@ -356,7 +356,7 @@ function setSmartCameraEnabled(value) {
   btn.title = "Умная камера (покачивается в такт музыке) вкл/выкл";
   btn.style.position = "fixed";
   btn.style.top = "12px";
-  btn.style.right = "64px"; // теперь левее кнопки волны (поменяли местами)
+  btn.style.right = "116px"; // сдвинута левее — освобождает место для новой кнопки (масштаб сцены) между камерой и волной
   btn.style.zIndex = "9999";
   btn.style.width = "44px";
   btn.style.height = "44px";
@@ -373,6 +373,63 @@ function setSmartCameraEnabled(value) {
   smartCameraBtnRef = btn;
   mobileFadeButtons.push(btn);
 })();
+
+// Кнопка масштаба сцены по высоте — циклически 80% → 70% → 60% → 100%
+// (квадрат целиком) → снова 80%... Иконка "maximize-2" в стиле Lucide.
+// Отдельно от шторки списка (та сжимает через #mobile-top-area целиком,
+// эта — напрямую высоту #scene-container через инлайн-стиль).
+const SCENE_HEIGHT_SCALE_STEPS = [0.8, 0.7, 0.6, 1];
+let sceneHeightScaleIndex = -1; // -1 = ещё не нажимали, 100% по умолчанию
+
+function applySceneHeightScale() {
+  const scale = sceneHeightScaleIndex === -1 ? 1 : SCENE_HEIGHT_SCALE_STEPS[sceneHeightScaleIndex];
+  if (scale >= 1) {
+    // 100% — просто убираем инлайн-высоту, дальше снова решает CSS
+    // (aspect-ratio/flex-shrink), как было изначально.
+    container.style.height = "";
+    return;
+  }
+  // "Естественная" высота квадрата равна его текущей ширине (aspect-
+  // ratio:1/1) — считаем от неё, не от текущей (уже, возможно, urezanной)
+  // высоты, иначе повторные клики будут схлопывать сцену лавинообразно.
+  const naturalSize = container.clientWidth;
+  container.style.height = `${naturalSize * scale}px`;
+}
+
+(function setupSceneHeightToggle() {
+  const btn = document.createElement("button");
+  btn.className = "mobile-fade-btn";
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+  btn.title = "Высота сцены: 80% / 70% / 60% / 100% по кругу";
+  btn.style.position = "fixed";
+  btn.style.top = "12px";
+  btn.style.right = "64px"; // между камерой (116px) и волной (12px)
+  btn.style.zIndex = "9999";
+  btn.style.width = "44px";
+  btn.style.height = "44px";
+  btn.style.border = "2px solid rgba(255,255,255,0.6)";
+  btn.style.borderRadius = "8px";
+  btn.style.cursor = "pointer";
+  btn.style.background = "rgba(0,0,0,0.4)";
+  btn.style.color = "#fff";
+  btn.style.display = "flex";
+  btn.style.alignItems = "center";
+  btn.style.justifyContent = "center";
+  btn.addEventListener("click", () => {
+    sceneHeightScaleIndex = (sceneHeightScaleIndex + 1) % SCENE_HEIGHT_SCALE_STEPS.length;
+    applySceneHeightScale();
+  });
+  document.body.appendChild(btn);
+  mobileFadeButtons.push(btn);
+})();
+
+// Пересчитываем текущий масштаб при ресайзе окна — "естественный размер"
+// (ширина контейнера) мог измениться, а инлайн-высота, выставленная от
+// СТАРОЙ ширины, иначе осталась бы неверной.
+window.addEventListener("resize", () => {
+  if (sceneHeightScaleIndex !== -1) applySceneHeightScale();
+});
 
 // --- Кнопка смены режимов Sound Wave (справа от кнопки камеры) ---
 // Три режима по кругу: "blur" (размытие, по умолчанию) → "normal"
@@ -695,11 +752,13 @@ const player = createAudioPlayer({
     playBtn.innerHTML = pauseIcon;
     playBtn.setAttribute("aria-label", "Pause");
     musicIsPlaying = true;
+    renderPlaylistList(); // индикатор в списке треков возвращается к цветному (был серым на паузе)
   },
   onPause() {
     playBtn.innerHTML = playIcon;
     playBtn.setAttribute("aria-label", "Play");
     musicIsPlaying = false;
+    renderPlaylistList(); // индикатор в списке треков становится серым
     // Без этого история SMA продолжает "стареть" мимо времени паузы и на
     // resume какое-то время работает на стухших данных — сбрасываем сразу.
     beatDetector.reset();
@@ -1383,7 +1442,10 @@ function renderPlaylistList() {
     // клик по крестику удаляет — независимо друг от друга.
     const item = document.createElement("div");
     item.className = "playlist-item";
-    if (i === currentTrackIndex) item.classList.add("now-playing");
+    if (i === currentTrackIndex) {
+      item.classList.add("now-playing");
+      if (!musicIsPlaying) item.classList.add("is-paused"); // индикатор становится серым, не цветным, пока трек на паузе
+    }
 
     const infoBtn = document.createElement("button");
     infoBtn.type = "button";
@@ -1405,7 +1467,10 @@ function renderPlaylistList() {
       loadTrackAtIndex(i);
       await ensureAnalyzerReady();
       player.play();
-      closePlaylistSheet();
+      // closePlaylistSheet() убран — просили не схлопывать шторку при
+      // клике по треку, только запускать выбранный трек, оставаясь в
+      // списке (удобно листать несколько треков подряд, не открывая
+      // шторку заново каждый раз).
     });
 
     // Мини-эквалайзер вместо фиолетовой подсветки фона — виден только у
