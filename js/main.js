@@ -449,57 +449,6 @@ applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
   mobileFadeButtons.push(btn);
 })();
 
-// Ползунок буста громкости — та же логика показа/скрытия, что у 🎥 и
-// режима волны (тот же mobileFadeButtons, ниже), но позиционирован
-// внизу самой СЦЕНЫ (абсолютно внутри #scene-container), а не в углу
-// экрана как кнопки. GainNode-буст, без защиты от искажений на пиках
-// (осознанный выбор) — см. подробный комментарий в audioAnalyzer.js.
-(function setupVolumeBoostSlider() {
-  const wrap = document.createElement("div");
-  wrap.className = "mobile-fade-btn";
-  wrap.style.position = "absolute";
-  wrap.style.left = "12px";
-  wrap.style.right = "12px";
-  wrap.style.bottom = "12px";
-  wrap.style.zIndex = "9999";
-  wrap.style.display = "flex";
-  wrap.style.alignItems = "center";
-  wrap.style.gap = "8px";
-  wrap.style.padding = "8px 12px";
-  wrap.style.borderRadius = "10px";
-  wrap.style.background = "rgba(0,0,0,0.45)";
-  wrap.style.border = "2px solid rgba(255,255,255,0.6)";
-  wrap.style.color = "#fff";
-  wrap.style.fontFamily = "sans-serif";
-  wrap.style.fontSize = "12px";
-
-  const label = document.createElement("span");
-  label.textContent = "🔊 1.0×";
-  label.style.flex = "0 0 auto";
-  label.style.minWidth = "44px";
-
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = "100";
-  slider.max = "30000"; // 300× — чем выше буст, тем больше тихих мест трека "дотягивается" до потолка лимитера и звучит громче в среднем; на 100× только начало быть заметно
-  slider.step = "1";
-  slider.value = "100";
-  slider.title = "Буст громкости сверх системной (до 300×) — GainNode + лимитер";
-  slider.style.flex = "1 1 auto";
-
-  slider.addEventListener("input", () => {
-    const factor = Number(slider.value) / 100;
-    volumeBoostFactor = factor;
-    label.textContent = `🔊 ${factor.toFixed(1)}×`;
-    analyzer?.setBoost(factor); // если analyzer ещё не создан (play не нажимали) — применится позже, см. ensureAnalyzerReady
-  });
-
-  wrap.appendChild(label);
-  wrap.appendChild(slider);
-  container.appendChild(wrap);
-  mobileFadeButtons.push(wrap);
-})();
-
 // Мобильное: 🎥 и режим волны скрыты по умолчанию на узких экранах (см.
 // @media (max-width: 480px) в style.css) — появляются по касанию
 // области сцены или клику мышью, автоматически прячутся через 3с. Если
@@ -805,12 +754,9 @@ player.setVolume(Number(volumeInput.value));
 // audio-reactive в renderLoop молча пропускался целиком, персонаж
 // оставался в Idle, волна не двигалась — работало только "случайно",
 // если до этого где-то УЖЕ нажимали playBtn напрямую).
-let volumeBoostFactor = 1; // текущее значение ползунка — применяется сразу, как только появится analyzer (тот создаётся лениво, только после первого play)
-
 async function ensureAnalyzerReady() {
   if (!analyzer) {
     analyzer = createAudioAnalyzer(player.audio);
-    analyzer.setBoost(volumeBoostFactor); // синхронизация — ползунок мог быть подвинут ДО первого play, пока analyzer ещё не существовал
   }
   await analyzer.resume();
 }
@@ -1429,31 +1375,86 @@ function nextShuffledIndex() {
 function renderPlaylistList() {
   playlistItemsEl.innerHTML = "";
   playlist.forEach((track, i) => {
-    const item = document.createElement("button");
-    item.type = "button";
+    // Раньше вся строка была ОДНОЙ <button> — теперь внутри неё появляется
+    // ещё и кнопка-крестик удаления, а вложенные <button> внутри <button>
+    // — невалидный HTML (браузер сам "разворачивает" такую вложенность
+    // непредсказуемо). Строка стала <div>-контейнером с двумя ОТДЕЛЬНЫМИ
+    // кнопками-соседями внутри: клик по названию/исполнителю играет трек,
+    // клик по крестику удаляет — независимо друг от друга.
+    const item = document.createElement("div");
     item.className = "playlist-item";
     if (i === currentTrackIndex) item.classList.add("now-playing");
+
+    const infoBtn = document.createElement("button");
+    infoBtn.type = "button";
+    infoBtn.className = "playlist-item-info";
 
     const titleEl = document.createElement("div");
     titleEl.className = "playlist-item-title";
     titleEl.textContent = track.title;
-    item.appendChild(titleEl);
+    infoBtn.appendChild(titleEl);
 
     if (track.artist) {
       const artistEl = document.createElement("div");
       artistEl.className = "playlist-item-artist";
       artistEl.textContent = track.artist;
-      item.appendChild(artistEl);
+      infoBtn.appendChild(artistEl);
     }
 
-    item.addEventListener("click", async () => {
+    infoBtn.addEventListener("click", async () => {
       loadTrackAtIndex(i);
       await ensureAnalyzerReady();
       player.play();
       closePlaylistSheet();
     });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "playlist-item-delete";
+    deleteBtn.setAttribute("aria-label", "Удалить трек из плейлиста");
+    deleteBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    deleteBtn.addEventListener("click", () => deleteTrackAtIndex(i));
+
+    item.appendChild(infoBtn);
+    item.appendChild(deleteBtn);
     playlistItemsEl.appendChild(item);
   });
+}
+
+/** Удаляет трек из плейлиста по индексу. Если удаляем ТЕКУЩИЙ играющий
+ * трек — переключаемся на следующий по списку (или на последний, если
+ * удалили последний трек списка), либо сбрасываем плеер в пустое
+ * состояние, если плейлист опустел совсем. Если удаляем трек ДО
+ * текущего — сдвигаем currentTrackIndex на −1, чтобы он продолжал
+ * указывать на тот же самый реальный трек (массив сжался под ним). */
+function deleteTrackAtIndex(i) {
+  const isCurrentTrack = i === currentTrackIndex;
+  playlist.splice(i, 1);
+
+  if (playlist.length === 0) {
+    currentTrackIndex = -1;
+    player.pause();
+    trackTitleTextEl.textContent = "Track";
+    trackArtistEl.textContent = "Author";
+    trackNameEl.textContent = "";
+    playBtn.disabled = true;
+    progress.disabled = true;
+    progress.value = "0";
+    timeCurrentEl.textContent = "00:00";
+    timeDurationEl.textContent = "00:00";
+    renderPlaylistList();
+    return;
+  }
+
+  if (isCurrentTrack) {
+    const nextIndex = Math.min(i, playlist.length - 1);
+    loadTrackAtIndex(nextIndex);
+  } else if (i < currentTrackIndex) {
+    currentTrackIndex -= 1;
+  }
+
+  renderPlaylistList();
 }
 
 /** Грузит трек по индексу плейлиста и запускает его состояние в UI — общая
