@@ -6,6 +6,7 @@ import { createAudioPlayer, formatTime } from "./audioPlayer.js";
 import { createAudioAnalyzer, createIntensityTracker } from "./audioAnalyzer.js";
 import { createBeatDetector } from "./beatDetector.js";
 import { computeWaveformPeaks, drawWaveform, drawFlatline } from "./waveform.js";
+import * as playlistStorage from "./playlistStorage.js";
 
 const container = document.getElementById("scene-container");
 const { scene, camera, renderer, placeholder, controls, resize } = createScene(container);
@@ -664,6 +665,14 @@ const playlistSheet = document.getElementById("playlist-sheet");
 const playlistDragHandle = document.getElementById("playlist-drag-handle");
 const playlistItemsEl = document.getElementById("playlist-items");
 const playlistAddBtn = document.getElementById("playlist-add-btn");
+const playlistsBtn = document.getElementById("playlists-btn");
+const playlistsPopupOverlay = document.getElementById("playlists-popup-overlay");
+const playlistsPopupClose = document.getElementById("playlists-popup-close");
+const playlistsPopupList = document.getElementById("playlists-popup-list");
+const playlistsPopupCreateBtn = document.getElementById("playlists-popup-create-btn");
+const playlistsPopupNameRow = document.getElementById("playlists-popup-name-row");
+const playlistsPopupNameInput = document.getElementById("playlists-popup-name-input");
+const playlistsPopupNameConfirm = document.getElementById("playlists-popup-name-confirm");
 const waveformCanvas = document.getElementById("waveform-canvas");
 const waveformToggleBtn = document.getElementById("waveform-toggle");
 
@@ -1523,6 +1532,7 @@ function renderPlaylistList() {
 function deleteTrackAtIndex(i) {
   const isCurrentTrack = i === currentTrackIndex;
   playlist.splice(i, 1);
+  persistActivePlaylist(); // убираем ID из активного плейлиста в IndexedDB — сам трек в общем хранилище треков не трогаем (может использоваться в другом плейлисте)
 
   if (playlist.length === 0) {
     currentTrackIndex = -1;
@@ -1657,24 +1667,51 @@ repeatBtn.addEventListener("click", () => {
 prevTrackBtn.addEventListener("click", () => goToPrevTrack({ autoplay: musicIsPlaying }));
 nextTrackBtn.addEventListener("click", () => goToNextTrack({ autoplay: musicIsPlaying }));
 
-// ВАЖНО (изменение поведения, касается и десктопа тоже, не только
-// мобильного вида): раньше выбор файлов ЗАМЕНЯЛ весь плейлист. Теперь,
-// когда появился настоящий видимый список треков (шторка на мобильном),
-// логичнее ДОБАВЛЯТЬ выбранные файлы к уже существующему плейлисту, как
-// и ведут себя реальные плеерные приложения с кнопкой "+Add" — иначе
-// смысла в видимом списке было бы немного (он бы всё равно всегда
-// состоял из одного набора, выбранного последним).
-fileInput.addEventListener("change", () => {
+// Переиспользуется в двух сценариях: обычное "+Add" (добавляет к
+// текущему активному плейлисту) и создание НОВОГО плейлиста из попапа
+// "Плейлисты" (тогда pendingNewPlaylistName выставлен заранее — см.
+// setupPlaylistsPopup ниже).
+let pendingNewPlaylistName = null;
+
+fileInput.addEventListener("change", async () => {
   const files = Array.from(fileInput.files || []);
   if (files.length === 0) return;
 
-  const wasEmpty = playlist.length === 0;
-  const newTracks = files.map((file) => {
+  // Сохраняем каждый файл в общее хранилище треков — id понадобится и
+  // для отображения (playlist[].id), и для персиста в IndexedDB.
+  const newTracks = [];
+  for (const file of files) {
     const { title, artist } = parseTrackName(file.name);
-    return { file, name: file.name, title, artist };
-  });
+    const trackId = await playlistStorage.addTrack(file, file.name, title, artist);
+    newTracks.push({ id: trackId, file, name: file.name, title, artist });
+  }
+
+  if (pendingNewPlaylistName !== null) {
+    // Создание НОВОГО плейлиста — заменяет видимый список целиком, а не
+    // дописывает к текущему.
+    const name = pendingNewPlaylistName;
+    pendingNewPlaylistName = null;
+    const plId = await playlistStorage.createPlaylist(name, newTracks.map((t) => t.id));
+    const plRecord = await playlistStorage.getPlaylist(plId);
+    await loadPlaylistIntoUI(plRecord);
+    renderPlaylistsPopupList(); // новый плейлист должен появиться в самом попапе тоже
+    fileInput.value = "";
+    return;
+  }
+
+  // ВАЖНО (изменение поведения, касается и десктопа тоже, не только
+  // мобильного вида): раньше выбор файлов ЗАМЕНЯЛ весь плейлист. Теперь,
+  // когда появился настоящий видимый список треков (шторка на мобильном),
+  // логичнее ДОБАВЛЯТЬ выбранные файлы к уже существующему плейлисту, как
+  // и ведут себя реальные плеерные приложения с кнопкой "+Add" — иначе
+  // смысла в видимом списке было бы немного (он бы всё равно всегда
+  // состоял из одного набора, выбранного последним). Плюс теперь ещё и
+  // персистится в АКТИВНЫЙ плейлист в IndexedDB, не теряется при
+  // перезагрузке страницы.
+  const wasEmpty = playlist.length === 0;
   playlist = playlist.concat(newTracks);
   renderPlaylistList();
+  await persistActivePlaylist();
 
   if (wasEmpty) {
     loadTrackAtIndex(0);
@@ -1684,28 +1721,144 @@ fileInput.addEventListener("change", () => {
 
 playlistAddBtn.addEventListener("click", () => fileInput.click());
 
-// ВРЕМЕННО (ускоряет тестирование): вшитый трек по умолчанию — не нужно
-// каждый раз жать "+ Add" перед проверкой. Подтягивается через
-// fetch+Blob как обычный File, дальше работает ИДЕНТИЧНО любому
-// вручную выбранному файлу (тот же parseTrackName/loadTrackAtIndex) —
-// не отдельная ветка логики, просто автоматически "нажатый" Add один
-// раз при загрузке страницы.
-(async function loadDefaultTestTrack() {
-  try {
-    const response = await fetch("assets/default-track.mp3"); // прямо в assets/, без подпапки audio/ — проще грузить на GitHub через мобильный интерфейс
-    const blob = await response.blob();
-    const file = new File([blob], "Dorofeeva - Додайте світла (minus).mp3", { type: blob.type || "audio/mpeg" });
-    const { title, artist } = parseTrackName(file.name);
-    const wasEmpty = playlist.length === 0;
-    playlist = playlist.concat([{ file, name: file.name, title, artist }]);
-    renderPlaylistList();
-    if (wasEmpty) {
-      loadTrackAtIndex(0);
-    }
-  } catch (err) {
-    console.warn("[main] Не удалось загрузить дефолтный тестовый трек:", err);
+// --- Попап "Плейлисты" ---
+function updatePlaylistsButtonLabel(name) {
+  playlistsBtn.textContent = name;
+}
+
+async function renderPlaylistsPopupList() {
+  const playlists = await playlistStorage.getAllPlaylists();
+  playlistsPopupList.innerHTML = "";
+  playlists.forEach((pl) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "playlists-popup-item";
+    if (pl.id === activePlaylistId) item.classList.add("active");
+    item.textContent = `${pl.name} (${pl.trackIds.length})`;
+    item.addEventListener("click", async () => {
+      await loadPlaylistIntoUI(pl);
+      closePlaylistsPopup();
+    });
+    playlistsPopupList.appendChild(item);
+  });
+}
+
+function openPlaylistsPopup() {
+  playlistsPopupOverlay.hidden = false;
+  playlistsPopupNameRow.hidden = true;
+  playlistsPopupNameInput.value = "";
+  renderPlaylistsPopupList();
+}
+
+function closePlaylistsPopup() {
+  playlistsPopupOverlay.hidden = true;
+}
+
+playlistsBtn.addEventListener("click", openPlaylistsPopup);
+playlistsPopupClose.addEventListener("click", closePlaylistsPopup);
+// Клик по тёмному фону вокруг попапа — тоже закрывает (не по самой карточке).
+playlistsPopupOverlay.addEventListener("click", (e) => {
+  if (e.target === playlistsPopupOverlay) closePlaylistsPopup();
+});
+
+// "+ Новый плейлист" — сначала просим имя (свой инпут, не нативный
+// prompt() — не вписывается по стилю в остальной интерфейс), потом
+// открываем стандартный выбор файлов (тот же fileInput, что и "+Add") —
+// pendingNewPlaylistName сигнализирует обработчику fileInput, что это
+// СОЗДАНИЕ нового плейлиста, а не добавление к текущему.
+playlistsPopupCreateBtn.addEventListener("click", () => {
+  playlistsPopupNameRow.hidden = false;
+  playlistsPopupNameInput.focus();
+});
+
+playlistsPopupNameConfirm.addEventListener("click", () => {
+  const name = playlistsPopupNameInput.value.trim();
+  if (!name) {
+    playlistsPopupNameInput.focus();
+    return;
   }
-})();
+  pendingNewPlaylistName = name;
+  closePlaylistsPopup();
+  fileInput.click();
+});
+
+// --- Активный плейлист (сохраняется в IndexedDB, переживает перезагрузку
+// страницы) ---
+const ACTIVE_PLAYLIST_STORAGE_KEY = "activePlaylistId";
+let activePlaylistId = null;
+
+/** Загружает плейлист (уже полученную запись из IndexedDB) в видимый
+ * список: тянет каждый трек из хранилища треков, восстанавливает File-
+ * объекты из blob'ов, заполняет playlist[], перерисовывает список,
+ * запускает загрузку первого трека. */
+async function loadPlaylistIntoUI(plRecord) {
+  activePlaylistId = plRecord.id;
+  localStorage.setItem(ACTIVE_PLAYLIST_STORAGE_KEY, String(plRecord.id));
+  updatePlaylistsButtonLabel(plRecord.name);
+
+  const tracks = [];
+  for (const trackId of plRecord.trackIds) {
+    const rec = await playlistStorage.getTrack(trackId);
+    if (!rec) continue; // трек мог быть удалён из общего хранилища отдельно — пропускаем молча
+    const file = new File([rec.blob], rec.name, { type: rec.blob.type || "audio/mpeg" });
+    tracks.push({ id: rec.id, file, name: rec.name, title: rec.title, artist: rec.artist });
+  }
+  playlist = tracks;
+  currentTrackIndex = -1;
+  shuffleHistory = [];
+  shuffleBag = [];
+  renderPlaylistList();
+  if (playlist.length > 0) loadTrackAtIndex(0);
+}
+
+/** Персистит ТЕКУЩИЙ playlist[] (массив в памяти) в активный плейлист в
+ * IndexedDB — вызывается после любого изменения состава (добавили через
+ * +Add, удалили крестиком). Если активного плейлиста ещё почему-то нет
+ * (не должно происходить после bootstrapPlaylist, но на всякий случай) —
+ * просто ничего не сохраняет, не роняет остальную логику. */
+async function persistActivePlaylist() {
+  if (activePlaylistId == null) return;
+  const ids = playlist.map((t) => t.id);
+  await playlistStorage.updatePlaylistTrackIds(activePlaylistId, ids);
+}
+
+/** Запускается один раз при загрузке страницы: поднимает ранее активный
+ * плейлист из IndexedDB (если есть — переживает перезагрузку страницы,
+ * ради этого всё и затевалось), либо, при самом первом визите вообще
+ * (или если сохранённый плейлист не нашёлся — например, очистили данные
+ * сайта), создаёт "Дефолт плейлист" с вшитым тестовым треком. С этого
+ * момента ВСЁ, включая этот тестовый трек, живёт в общем хранилище
+ * одинаково — не нужно отдельно поддерживать "особый" случай без
+ * активного плейлиста вообще, он есть всегда.
+ */
+async function bootstrapPlaylist() {
+  const savedId = localStorage.getItem(ACTIVE_PLAYLIST_STORAGE_KEY);
+  if (savedId) {
+    try {
+      const pl = await playlistStorage.getPlaylist(Number(savedId));
+      if (pl) {
+        await loadPlaylistIntoUI(pl);
+        return;
+      }
+    } catch (err) {
+      console.warn("[main] Не удалось поднять сохранённый плейлист:", err);
+    }
+  }
+
+  try {
+    const response = await fetch("assets/default-track.mp3");
+    const blob = await response.blob();
+    const name = "Dorofeeva - Додайте світла (minus).mp3";
+    const { title, artist } = parseTrackName(name);
+    const trackId = await playlistStorage.addTrack(blob, name, title, artist);
+    const plId = await playlistStorage.createPlaylist("Дефолт плейлист", [trackId]);
+    const plRecord = await playlistStorage.getPlaylist(plId);
+    await loadPlaylistIntoUI(plRecord);
+  } catch (err) {
+    console.warn("[main] Не удалось создать дефолтный плейлист:", err);
+  }
+}
+bootstrapPlaylist();
 
 // --- Шторка списка треков (мобильная, свайп полоски-хендла вверх/вниз) ---
 // Порог "хендл нужно перетащить на N px, чтобы шторка открылась/закрылась
