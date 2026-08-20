@@ -660,6 +660,20 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     display: none;
   }
 
+  /* margin-top:auto ("прижать к низу") стоит на #dance-controls — но при
+     открытой шторке она сама скрыта (display:none), а скрытый элемент
+     полностью выпадает из flex-раскладки, включая свой margin. Без этого
+     правила при открытой шторке #player просто оставался бы сразу под
+     сценой, не прижатым к низу — и 20px-отступ (см. main.js
+     setSheetFraction) добавлялся бы после него в неожиданном месте, а не
+     сразу под видимым контентом. Даём #player СВОЙ margin-top:auto,
+     СПЕЦИАЛЬНО только на этот случай (когда шторка открыта, конфликта с
+     обычным margin-top:auto у #dance-controls нет — та в этот момент не
+     участвует в раскладке вообще).*/
+  #mobile-top-area.sheet-open #player {
+    margin-top: auto;
+  }
+
   #track-info-mobile {
     /* Теперь виден ВСЕГДА, не только после выбора трека — пустое место
        занимают плейсхолдеры "Track"/"Author" (см. main.js), пока
@@ -843,8 +857,14 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     pointer-events: auto;
   }
 
-  .mobile-fade-btn:disabled {
-    opacity: 0.35 !important; /* !important — иначе .mobile-visible (opacity:1) перебивает при открытой шторке, где кнопка уже показана, просто должна выглядеть неактивной */
+  .mobile-fade-btn.mobile-visible:disabled {
+    /* Специфичность строго ПОВЕРХ .mobile-visible (тот же селектор +
+       :disabled) — не поверх БАЗОВОГО скрытого состояния. Раньше было
+       просто .mobile-fade-btn:disabled — специфичность (класс+псевдокласс)
+       оказалась ВЫШЕ базового .mobile-fade-btn{opacity:0}, да ещё с
+       !important — кнопка показывалась в состоянии disabled ДАЖЕ если по
+       сцене вообще не кликали (в обход всего механизма показа по тапу). */
+    opacity: 0.35;
     cursor: not-allowed;
   }
 
