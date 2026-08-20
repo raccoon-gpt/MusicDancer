@@ -155,6 +155,11 @@ export function createAudioAnalyzer(audioElement) {
    */
   function setBoost(factor) {
     gainNode.gain.value = factor;
+    // ВРЕМЕННО: диагностика "ползунок не бустит" — убрать после того,
+    // как разберёмся. Показывает, реально ли применяется значение на
+    // уровне Web Audio, или проблема где-то ещё (системная громкость,
+    // восприятие на слух и т.д.).
+    console.log("[volumeBoost] gainNode.gain.value установлен в", factor, " реально сейчас:", gainNode.gain.value, " audioCtx.state:", audioCtx.state);
   }
 
   return { audioCtx, resume, getFeatures, getSpectrumBars, setBoost };
