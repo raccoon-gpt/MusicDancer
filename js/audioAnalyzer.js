@@ -24,37 +24,6 @@ export function createAudioAnalyzer(audioElement) {
   // ВАЖНО: createMediaElementSource можно вызвать только ОДИН раз на элемент —
   // поэтому createAudioAnalyzer тоже должен вызываться один раз за всё приложение.
   const source = audioCtx.createMediaElementSource(audioElement);
-  const gainNode = audioCtx.createGain();
-  // Лимитер — стоит СРАЗУ после буста, до анализатора. Без него gainNode
-  // выше ~1.3-1.5x почти гарантированно даёт клиппинг (жёсткое обрезание
-  // пиков по цифровому потолку) — на слух это шкварчание/шум, а не
-  // реальная громкость (подтвердилось на практике: буст до 25x не делал
-  // звук громче, только добавлял шум). Лимитер мягко поджимает пики
-  // ДО того, как они упрутся в потолок — тогда высокий буст даёт честную
-  // громкость, а не только грязь.
-  //   threshold — с какого уровня сигнала начинает поджимать (близко к
-  //     потолку, -6dB, чтобы не трогать тихие места вообще)
-  //   ratio — насколько сильно поджимает всё, что выше threshold (20:1 —
-  //     уже почти "жёсткий" лимитер, не мягкая компрессия)
-  //   knee — плавность перехода в точке threshold (небольшая, не резкая)
-  //   attack — как быстро реагирует на новый пик (быстро, 3мс — ловит
-  //     даже короткие транзиенты/удары баса, не даёт им проскочить)
-  //   release — как быстро отпускает после пика (не мгновенно — резкий
-  //     release звучит как "накачка"/pumping, дёрганая громкость)
-  const compressor = audioCtx.createDynamicsCompressor();
-  // threshold=-6dB (было) держал сигнал у потолка НИЖЕ, чем у трека
-  // часто бывает и без всякого буста (смастерённая музыка сегодня часто
-  // уже сидит в районе -1..-3dB на пиках) — весь конвейер буст+лимитер
-  // мог звучать тише или так же, как оригинал, независимо от значения
-  // буста, просто потому что лимитер всё придавливал к заниженному
-  // потолку. -1dB — стандартная величина для "мастеринг-лимитера":
-  // бо́льшая часть сигнала проходит с ПОЛНЫМ усилением от буста, лимитер
-  // подрезает только самые пики прямо у края, а не давит заранее.
-  compressor.threshold.value = -1;
-  compressor.knee.value = 3;
-  compressor.ratio.value = 20;
-  compressor.attack.value = 0.003;
-  compressor.release.value = 0.25;
   const analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.2; // намеренно низкое — почти "сырые" данные
@@ -74,9 +43,7 @@ export function createAudioAnalyzer(audioElement) {
   analyser.minDecibels = -70;
   analyser.maxDecibels = -20;
 
-  source.connect(gainNode);
-  gainNode.connect(compressor);
-  compressor.connect(analyser);
+  source.connect(analyser);
   analyser.connect(audioCtx.destination); // без этого звук замолчит — граф оборвётся
 
   const freqData = new Uint8Array(analyser.frequencyBinCount);
@@ -165,29 +132,7 @@ export function createAudioAnalyzer(audioElement) {
     return bars;
   }
 
-  /**
-   * Буст громкости сверх обычного audio.volume (у того потолок 1.0,
-   * дальше браузер физически не пускает). GainNode, в отличие от
-   * audio.volume, может усиливать сигнал выше исходного — ставим ДО
-   * analyser в графе (source → gain → compressor → analyser →
-   * destination), так что анализ (детекция бита, спектр для волны) тоже
-   * "чувствует" усиленный (и поджатый лимитером) сигнал, не только
-   * динамик/наушники.
-   *
-   * Раньше здесь стоял просто GainNode без защиты — на практике буст
-   * выше ~1.3-1.5x давал клиппинг (хрип/шум вместо реальной громкости).
-   * Теперь следом стоит DynamicsCompressorNode-лимитер (см. выше в
-   * графе) — он мягко поджимает пики, так что более высокий буст даёт
-   * честную громкость, а не только грязь.
-   *
-   * @param {number} factor - 1 = обычная громкость (как сейчас), 25 =
-   *   максимум (в 25 раз сильнее системного максимума).
-   */
-  function setBoost(factor) {
-    gainNode.gain.value = factor;
-  }
-
-  return { audioCtx, resume, getFeatures, getSpectrumBars, setBoost };
+  return { audioCtx, resume, getFeatures, getSpectrumBars };
 }
 
 /**
