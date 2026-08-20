@@ -25,6 +25,28 @@ export function createAudioAnalyzer(audioElement) {
   // поэтому createAudioAnalyzer тоже должен вызываться один раз за всё приложение.
   const source = audioCtx.createMediaElementSource(audioElement);
   const gainNode = audioCtx.createGain();
+  // Лимитер — стоит СРАЗУ после буста, до анализатора. Без него gainNode
+  // выше ~1.3-1.5x почти гарантированно даёт клиппинг (жёсткое обрезание
+  // пиков по цифровому потолку) — на слух это шкварчание/шум, а не
+  // реальная громкость (подтвердилось на практике: буст до 25x не делал
+  // звук громче, только добавлял шум). Лимитер мягко поджимает пики
+  // ДО того, как они упрутся в потолок — тогда высокий буст даёт честную
+  // громкость, а не только грязь.
+  //   threshold — с какого уровня сигнала начинает поджимать (близко к
+  //     потолку, -6dB, чтобы не трогать тихие места вообще)
+  //   ratio — насколько сильно поджимает всё, что выше threshold (20:1 —
+  //     уже почти "жёсткий" лимитер, не мягкая компрессия)
+  //   knee — плавность перехода в точке threshold (небольшая, не резкая)
+  //   attack — как быстро реагирует на новый пик (быстро, 3мс — ловит
+  //     даже короткие транзиенты/удары баса, не даёт им проскочить)
+  //   release — как быстро отпускает после пика (не мгновенно — резкий
+  //     release звучит как "накачка"/pumping, дёрганая громкость)
+  const compressor = audioCtx.createDynamicsCompressor();
+  compressor.threshold.value = -6;
+  compressor.knee.value = 6;
+  compressor.ratio.value = 20;
+  compressor.attack.value = 0.003;
+  compressor.release.value = 0.25;
   const analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.2; // намеренно низкое — почти "сырые" данные
@@ -45,7 +67,8 @@ export function createAudioAnalyzer(audioElement) {
   analyser.maxDecibels = -20;
 
   source.connect(gainNode);
-  gainNode.connect(analyser);
+  gainNode.connect(compressor);
+  compressor.connect(analyser);
   analyser.connect(audioCtx.destination); // без этого звук замолчит — граф оборвётся
 
   const freqData = new Uint8Array(analyser.frequencyBinCount);
@@ -138,29 +161,22 @@ export function createAudioAnalyzer(audioElement) {
    * Буст громкости сверх обычного audio.volume (у того потолок 1.0,
    * дальше браузер физически не пускает). GainNode, в отличие от
    * audio.volume, может усиливать сигнал выше исходного — ставим ДО
-   * analyser в графе (source → gain → analyser → destination), так что
-   * анализ (детекция бита, спектр для волны) тоже "чувствует" усиленный
-   * сигнал, не только динамик/наушники — логично, раз на слух звук
-   * действительно громче.
+   * analyser в графе (source → gain → compressor → analyser →
+   * destination), так что анализ (детекция бита, спектр для волны) тоже
+   * "чувствует" усиленный (и поджатый лимитером) сигнал, не только
+   * динамик/наушники.
    *
-   * ВАЖНО (осознанный выбор, без защиты): просто GainNode, без
-   * компрессора/лимитера следом. Смастерённая музыка часто уже сидит
-   * близко к максимальной громкости — буст выше ~1.3-1.5x почти
-   * гарантированно даёт хрип/треск на пиках (clipping). Если понадобится
-   * убрать искажения — нужен ещё DynamicsCompressorNode между gainNode и
-   * analyser, отдельная доработка.
+   * Раньше здесь стоял просто GainNode без защиты — на практике буст
+   * выше ~1.3-1.5x давал клиппинг (хрип/шум вместо реальной громкости).
+   * Теперь следом стоит DynamicsCompressorNode-лимитер (см. выше в
+   * графе) — он мягко поджимает пики, так что более высокий буст даёт
+   * честную громкость, а не только грязь.
    *
    * @param {number} factor - 1 = обычная громкость (как сейчас), 25 =
-   *   максимум (в 25 раз сильнее системного максимума — поднято с
-   *   изначальных 2.5×, тот прирост оказался почти неразличим на слух).
+   *   максимум (в 25 раз сильнее системного максимума).
    */
   function setBoost(factor) {
     gainNode.gain.value = factor;
-    // ВРЕМЕННО: диагностика "ползунок не бустит" — убрать после того,
-    // как разберёмся. Показывает, реально ли применяется значение на
-    // уровне Web Audio, или проблема где-то ещё (системная громкость,
-    // восприятие на слух и т.д.).
-    console.log("[volumeBoost] gainNode.gain.value установлен в", factor, " реально сейчас:", gainNode.gain.value, " audioCtx.state:", audioCtx.state);
   }
 
   return { audioCtx, resume, getFeatures, getSpectrumBars, setBoost };
