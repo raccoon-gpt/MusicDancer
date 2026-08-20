@@ -117,3 +117,38 @@ export async function updatePlaylistTrackIds(id, trackIds) {
     getReq.onerror = () => reject(getReq.error);
   });
 }
+
+/** Удаляет плейлист целиком (саму запись "имя + список ID"). Сами треки
+ * в общем хранилище треков НЕ трогает — они могут быть использованы в
+ * другом плейлисте, удалять их вместе с этим плейлистом было бы неверно. */
+export async function deletePlaylist(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYLISTS_STORE, "readwrite");
+    const req = tx.objectStore(PLAYLISTS_STORE).delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Переименовывает плейлист — меняет только поле name, trackIds не трогает. */
+export async function renamePlaylist(id, name) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYLISTS_STORE, "readwrite");
+    const store = tx.objectStore(PLAYLISTS_STORE);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const record = getReq.result;
+      if (!record) {
+        resolve(null);
+        return;
+      }
+      record.name = name;
+      const putReq = store.put(record);
+      putReq.onsuccess = () => resolve(record);
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
