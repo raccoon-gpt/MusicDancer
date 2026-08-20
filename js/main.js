@@ -1464,6 +1464,19 @@ function renderPlaylistList() {
     }
 
     infoBtn.addEventListener("click", async () => {
+      // Клик по УЖЕ играющему треку — не перезагружаем его заново, а
+      // просто переключаем play/pause (иначе перезапуск сбивал позицию
+      // воспроизведения на 0). Клик по ДРУГОМУ треку — как раньше,
+      // загружаем и запускаем.
+      if (i === currentTrackIndex) {
+        if (musicIsPlaying) {
+          player.pause();
+        } else {
+          await ensureAnalyzerReady();
+          player.play();
+        }
+        return;
+      }
       loadTrackAtIndex(i);
       await ensureAnalyzerReady();
       player.play();
