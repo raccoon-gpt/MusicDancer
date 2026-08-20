@@ -481,10 +481,10 @@ applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "100";
-  slider.max = "250";
+  slider.max = "2500"; // 25× — подняли с 2.5×, тот прирост оказался почти неразличим на слух
   slider.step = "1";
   slider.value = "100";
-  slider.title = "Буст громкости сверх системной (до 2.5×) — GainNode, без защиты от искажений на пиках";
+  slider.title = "Буст громкости сверх системной (до 25×) — GainNode, без защиты от искажений на пиках";
   slider.style.flex = "1 1 auto";
 
   slider.addEventListener("input", () => {
@@ -1591,6 +1591,29 @@ fileInput.addEventListener("change", () => {
 });
 
 playlistAddBtn.addEventListener("click", () => fileInput.click());
+
+// ВРЕМЕННО (ускоряет тестирование): вшитый трек по умолчанию — не нужно
+// каждый раз жать "+ Add" перед проверкой. Подтягивается через
+// fetch+Blob как обычный File, дальше работает ИДЕНТИЧНО любому
+// вручную выбранному файлу (тот же parseTrackName/loadTrackAtIndex) —
+// не отдельная ветка логики, просто автоматически "нажатый" Add один
+// раз при загрузке страницы.
+(async function loadDefaultTestTrack() {
+  try {
+    const response = await fetch("assets/audio/default-track.mp3");
+    const blob = await response.blob();
+    const file = new File([blob], "Dorofeeva - Додайте світла (minus).mp3", { type: blob.type || "audio/mpeg" });
+    const { title, artist } = parseTrackName(file.name);
+    const wasEmpty = playlist.length === 0;
+    playlist = playlist.concat([{ file, name: file.name, title, artist }]);
+    renderPlaylistList();
+    if (wasEmpty) {
+      loadTrackAtIndex(0);
+    }
+  } catch (err) {
+    console.warn("[main] Не удалось загрузить дефолтный тестовый трек:", err);
+  }
+})();
 
 // --- Шторка списка треков (мобильная, свайп полоски-хендла вверх/вниз) ---
 // Порог "хендл нужно перетащить на N px, чтобы шторка открылась/закрылась
