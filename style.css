@@ -977,6 +977,13 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     animation: playlist-eq-bounce 0.9s ease-in-out infinite;
   }
 
+  /* На паузе — серый, не цветной (анимация покачивания продолжается,
+     меняется только цвет — сам факт "это текущий трек" остаётся видно,
+     а не пропадает совсем). */
+  .playlist-item.is-paused .playlist-item-eq span {
+    background: #8a8f98;
+  }
+
   .playlist-item-eq span:nth-child(1) {
     height: 40%;
     animation-delay: 0s;
