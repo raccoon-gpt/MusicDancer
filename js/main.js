@@ -1960,7 +1960,8 @@ let sheetDragStartFraction = 0;
 
 function setSheetFraction(fraction, { animate = false } = {}) {
   const clamped = Math.min(1, Math.max(0, fraction));
-  mobileTopArea.style.transition = animate ? "flex-basis 0.25s ease, margin-bottom 0.25s ease" : "none";
+  mobileTopArea.style.transition = animate ? "flex-basis 0.25s ease" : "none";
+  container.style.transition = animate ? "margin-bottom 0.25s ease" : "none"; // container = #scene-container (объявлен в самом начале файла)
   playlistSheet.style.transition = animate ? "flex-basis 0.25s ease" : "none";
   // 100% (естественная высота) при fraction=0 → 40% при fraction=1; то же
   // зеркально для шторки (0 → 60%). Работает как единая интерполяция —
@@ -1969,12 +1970,13 @@ function setSheetFraction(fraction, { animate = false } = {}) {
   // перетаскивания пальцем.
   mobileTopArea.style.flexBasis = `${100 - clamped * 60}%`;
   playlistSheet.style.flexBasis = `${clamped * 60}%`;
-  // Отступ между сценой (верхним блоком) и шторкой — растёт вместе с
-  // fraction (0px закрыто → 20px открыто), НЕ статичный CSS gap: тот
-  // всегда резервировал бы место, даже когда шторка схлопнута до нуля
-  // (просто уводя контент выше без всякой причины — сдвигало бы, помимо
-  // прочего, название трека вниз даже когда список не открыт вообще).
-  mobileTopArea.style.marginBottom = `${clamped * 20}px`;
+  // Отступ — ИМЕННО под самой сценой (margin-bottom на #scene-container),
+  // не после всего блока #mobile-top-area целиком (та версия ставила
+  // отступ ПОСЛЕ хендла, между хендлом и кнопками — не то место, просили
+  // между сценой и всем остальным, включая сам хендл). Растёт вместе с
+  // fraction (0px закрыто → 20px открыто), не статичный CSS margin: тот
+  // всегда резервировал бы место, даже когда шторка схлопнута до нуля.
+  container.style.marginBottom = `${clamped * 20}px`;
 }
 
 function openPlaylistSheet() {
