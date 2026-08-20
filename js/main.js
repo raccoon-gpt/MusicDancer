@@ -491,6 +491,7 @@ applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
     const factor = Number(slider.value) / 100;
     volumeBoostFactor = factor;
     label.textContent = `🔊 ${factor.toFixed(1)}×`;
+    console.log("[volumeBoost] слайдер подвинут:", factor, " analyzer существует:", !!analyzer);
     analyzer?.setBoost(factor); // если analyzer ещё не создан (play не нажимали) — применится позже, см. ensureAnalyzerReady
   });
 
