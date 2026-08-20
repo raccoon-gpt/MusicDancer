@@ -481,10 +481,10 @@ applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "100";
-  slider.max = "10000"; // 100× — 25× оказалось еле заметно даже с лимитером
+  slider.max = "30000"; // 300× — чем выше буст, тем больше тихих мест трека "дотягивается" до потолка лимитера и звучит громче в среднем; на 100× только начало быть заметно
   slider.step = "1";
   slider.value = "100";
-  slider.title = "Буст громкости сверх системной (до 100×) — GainNode + лимитер";
+  slider.title = "Буст громкости сверх системной (до 300×) — GainNode + лимитер";
   slider.style.flex = "1 1 auto";
 
   slider.addEventListener("input", () => {
