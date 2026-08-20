@@ -843,6 +843,11 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     pointer-events: auto;
   }
 
+  .mobile-fade-btn:disabled {
+    opacity: 0.35 !important; /* !important — иначе .mobile-visible (opacity:1) перебивает при открытой шторке, где кнопка уже показана, просто должна выглядеть неактивной */
+    cursor: not-allowed;
+  }
+
   /* Полоска-хендл для свайпа списка треков (см. main.js — pointerdown/
      move/up на этой кнопке крутит flex-basis у #mobile-top-area и
      #playlist-sheet). Сама кнопка на всю ширину, лёгкая, без фона —
