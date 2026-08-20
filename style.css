@@ -916,12 +916,154 @@ input[type="range"]:disabled::-webkit-slider-thumb {
        наружу даже при закрытой шторке. */
   }
 
+  #playlist-sheet-buttons-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 20px 10px;
+  }
+
   #playlist-add-btn {
     flex: 0 0 auto;
-    align-self: flex-start;
-    margin: 12px 20px 10px; /* было 16px слева — теперь 20px */
     padding: 8px 16px;
     border-radius: 999px;
+    border: none;
+    background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* "Плейлисты" — второстепенная кнопка рядом с +Add, менее яркая
+     (обводка, не заливка) — показывает имя активного плейлиста, не
+     общее слово "Плейлисты" (см. updatePlaylistsButtonLabel в main.js). */
+  #playlists-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1.5px solid #4a4f5c;
+    background: transparent;
+    color: #d5d8dd;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* --- Попап "Плейлисты" --- */
+  /* --- Попап "Плейлисты" --- */
+  /* :not([hidden]) — иначе display:flex (ID-селектор) имеет более
+     высокую специфичность, чем атрибут [hidden] у браузера по
+     умолчанию, и побеждает его — попап был бы виден всегда, даже с
+     hidden в разметке. С этим же классом бага уже сталкивались в этом
+     файле раньше (см. историю с .mobile-fade-btn:disabled). */
+  #playlists-popup-overlay:not([hidden]) {
+    display: flex;
+  }
+
+  #playlists-popup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.55);
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  #playlists-popup {
+    width: 100%;
+    max-width: 480px;
+    max-height: 70vh;
+    background: #1c1f27;
+    border-radius: 20px 20px 0 0;
+    padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  #playlists-popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  #playlists-popup-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: #d5d8dd;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  #playlists-popup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+  }
+
+  .playlists-popup-item {
+    text-align: left;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    color: #d5d8dd;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .playlists-popup-item.active {
+    background: rgba(185, 90, 247, 0.18);
+    color: #ecd3ff;
+  }
+
+  #playlists-popup-create-btn {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  #playlists-popup-name-row:not([hidden]) {
+    display: flex;
+  }
+
+  #playlists-popup-name-row {
+    gap: 8px;
+  }
+
+  #playlists-popup-name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1.5px solid #4a4f5c;
+    background: #14161b;
+    color: #fff;
+    font-size: 14px;
+  }
+
+  #playlists-popup-name-confirm {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border-radius: 10px;
     border: none;
     background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
     color: #fff;
