@@ -944,12 +944,50 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .playlist-item.now-playing {
-    background: rgba(185, 90, 247, 0.18);
+  /* Раньше подсветка "сейчас играет" была через фон строки (фиолетовый
+     оттенок) — заменили на мини-эквалайзер (см. .playlist-item-eq ниже),
+     фон/цвет текста больше не меняются у активного трека. */
+  .playlist-item-eq {
+    display: none; /* показывается только у активного трека, см. .now-playing ниже */
+    flex: 0 0 auto;
+    align-items: flex-end;
+    gap: 2px;
+    width: 16px;
+    height: 14px;
   }
 
-  .playlist-item.now-playing .playlist-item-info {
-    color: #ecd3ff;
+  .playlist-item.now-playing .playlist-item-eq {
+    display: flex;
+  }
+
+  .playlist-item-eq span {
+    width: 3px;
+    background: #b95af7;
+    border-radius: 1px;
+    transform-origin: bottom; /* растут снизу вверх, не от центра — иначе "плавают", а не стоят на одной линии */
+    animation: playlist-eq-bounce 0.9s ease-in-out infinite;
+  }
+
+  .playlist-item-eq span:nth-child(1) {
+    height: 40%;
+    animation-delay: 0s;
+  }
+  .playlist-item-eq span:nth-child(2) {
+    height: 100%;
+    animation-delay: 0.2s;
+  }
+  .playlist-item-eq span:nth-child(3) {
+    height: 65%;
+    animation-delay: 0.4s;
+  }
+
+  @keyframes playlist-eq-bounce {
+    0%, 100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
+    }
   }
 
   .playlist-item-title {
