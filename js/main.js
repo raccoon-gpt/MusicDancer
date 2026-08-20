@@ -1408,6 +1408,17 @@ function renderPlaylistList() {
       closePlaylistSheet();
     });
 
+    // Мини-эквалайзер вместо фиолетовой подсветки фона — виден только у
+    // текущего трека (CSS показывает его через .now-playing), покачивается
+    // непрерывно чистой CSS-анимацией (@keyframes), без реального аудио-
+    // анализа — это просто индикатор "вот этот трек сейчас загружен", не
+    // полноценная волна (для такой маленькой иконки тащить сюда весь
+    // soundWave.js было бы overkill).
+    const eqEl = document.createElement("div");
+    eqEl.className = "playlist-item-eq";
+    eqEl.setAttribute("aria-hidden", "true");
+    eqEl.innerHTML = "<span></span><span></span><span></span>";
+
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "playlist-item-delete";
@@ -1417,6 +1428,7 @@ function renderPlaylistList() {
     deleteBtn.addEventListener("click", () => deleteTrackAtIndex(i));
 
     item.appendChild(infoBtn);
+    item.appendChild(eqEl);
     item.appendChild(deleteBtn);
     playlistItemsEl.appendChild(item);
   });
