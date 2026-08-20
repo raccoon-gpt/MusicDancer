@@ -114,8 +114,28 @@
          при свайпе #playlist-drag-handle вверх. Мобильный, десктоп его не
          видит (.mobile-only-control). -->
     <div id="playlist-sheet" class="mobile-only-control" aria-hidden="true">
-      <button id="playlist-add-btn">+ Add</button>
+      <div id="playlist-sheet-buttons-row">
+        <button id="playlist-add-btn">+ Add</button>
+        <button id="playlists-btn">Дефолт Плейлист</button>
+      </div>
       <div id="playlist-items"></div>
+    </div>
+
+    <!-- Попап "Плейлисты" — список сохранённых плейлистов + создание
+         нового. Скрыт по умолчанию (display управляется через main.js). -->
+    <div id="playlists-popup-overlay" hidden>
+      <div id="playlists-popup">
+        <div id="playlists-popup-header">
+          <span>Плейлисты</span>
+          <button id="playlists-popup-close" aria-label="Закрыть">✕</button>
+        </div>
+        <div id="playlists-popup-list"></div>
+        <button id="playlists-popup-create-btn">+ Новый плейлист</button>
+        <div id="playlists-popup-name-row" hidden>
+          <input id="playlists-popup-name-input" type="text" placeholder="Название плейлиста" maxlength="60" />
+          <button id="playlists-popup-name-confirm">Далее</button>
+        </div>
+      </div>
     </div>
   </div>
 
