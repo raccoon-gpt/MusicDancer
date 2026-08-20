@@ -380,6 +380,7 @@ function setSmartCameraEnabled(value) {
 // эта — напрямую высоту #scene-container через инлайн-стиль).
 const SCENE_HEIGHT_SCALE_STEPS = [0.8, 0.7, 0.6, 1];
 let sceneHeightScaleIndex = -1; // -1 = ещё не нажимали, 100% по умолчанию
+let sceneHeightBtnRef = null; // нужна снаружи — отключается при открытой шторке списка
 
 function applySceneHeightScale() {
   const scale = sceneHeightScaleIndex === -1 ? 1 : SCENE_HEIGHT_SCALE_STEPS[sceneHeightScaleIndex];
@@ -422,6 +423,7 @@ function applySceneHeightScale() {
   });
   document.body.appendChild(btn);
   mobileFadeButtons.push(btn);
+  sceneHeightBtnRef = btn;
 })();
 
 // Пересчитываем текущий масштаб при ресайзе окна — "естественный размер"
@@ -1727,7 +1729,7 @@ let sheetDragStartFraction = 0;
 
 function setSheetFraction(fraction, { animate = false } = {}) {
   const clamped = Math.min(1, Math.max(0, fraction));
-  mobileTopArea.style.transition = animate ? "flex-basis 0.25s ease" : "none";
+  mobileTopArea.style.transition = animate ? "flex-basis 0.25s ease, margin-bottom 0.25s ease" : "none";
   playlistSheet.style.transition = animate ? "flex-basis 0.25s ease" : "none";
   // 100% (естественная высота) при fraction=0 → 40% при fraction=1; то же
   // зеркально для шторки (0 → 60%). Работает как единая интерполяция —
@@ -1736,6 +1738,12 @@ function setSheetFraction(fraction, { animate = false } = {}) {
   // перетаскивания пальцем.
   mobileTopArea.style.flexBasis = `${100 - clamped * 60}%`;
   playlistSheet.style.flexBasis = `${clamped * 60}%`;
+  // Отступ между сценой (верхним блоком) и шторкой — растёт вместе с
+  // fraction (0px закрыто → 20px открыто), НЕ статичный CSS gap: тот
+  // всегда резервировал бы место, даже когда шторка схлопнута до нуля
+  // (просто уводя контент выше без всякой причины — сдвигало бы, помимо
+  // прочего, название трека вниз даже когда список не открыт вообще).
+  mobileTopArea.style.marginBottom = `${clamped * 20}px`;
 }
 
 function openPlaylistSheet() {
@@ -1744,6 +1752,7 @@ function openPlaylistSheet() {
   playlistDragHandle.setAttribute("aria-expanded", "true");
   playlistSheet.setAttribute("aria-hidden", "false");
   setSheetFraction(1, { animate: true });
+  if (sceneHeightBtnRef) sceneHeightBtnRef.disabled = true; // высота сцены при открытой шторке и так управляется шторкой, ручной масштаб не имеет смысла
 }
 
 function closePlaylistSheet() {
@@ -1752,6 +1761,7 @@ function closePlaylistSheet() {
   playlistDragHandle.setAttribute("aria-expanded", "false");
   playlistSheet.setAttribute("aria-hidden", "true");
   setSheetFraction(0, { animate: true });
+  if (sceneHeightBtnRef) sceneHeightBtnRef.disabled = false;
 }
 
 playlistDragHandle.addEventListener("pointerdown", (e) => {
