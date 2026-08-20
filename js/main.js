@@ -1730,23 +1730,86 @@ async function renderPlaylistsPopupList() {
   const playlists = await playlistStorage.getAllPlaylists();
   playlistsPopupList.innerHTML = "";
   playlists.forEach((pl) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "playlists-popup-item";
-    if (pl.id === activePlaylistId) item.classList.add("active");
-    item.textContent = `${pl.name} (${pl.trackIds.length})`;
-    item.addEventListener("click", async () => {
+    // Раньше вся строка была ОДНОЙ <button> — теперь внутри неё ещё
+    // карандашик (переименовать) и крестик (удалить), а вложенные
+    // <button> внутри <button> — невалидный HTML (та же история, что и
+    // с крестиком удаления трека в списке).
+    const row = document.createElement("div");
+    row.className = "playlists-popup-item";
+    if (pl.id === activePlaylistId) row.classList.add("active");
+
+    const selectBtn = document.createElement("button");
+    selectBtn.type = "button";
+    selectBtn.className = "playlists-popup-item-select";
+    selectBtn.textContent = `${pl.name} (${pl.trackIds.length})`;
+    selectBtn.addEventListener("click", async () => {
       await loadPlaylistIntoUI(pl);
       closePlaylistsPopup();
     });
-    playlistsPopupList.appendChild(item);
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "playlists-popup-item-edit";
+    editBtn.setAttribute("aria-label", "Rename playlist");
+    editBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+    editBtn.addEventListener("click", () => startRenamePlaylist(pl));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "playlists-popup-item-delete";
+    deleteBtn.setAttribute("aria-label", "Delete playlist");
+    deleteBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    deleteBtn.addEventListener("click", () => deletePlaylistById(pl.id));
+
+    row.appendChild(selectBtn);
+    row.appendChild(editBtn);
+    row.appendChild(deleteBtn);
+    playlistsPopupList.appendChild(row);
   });
+}
+
+/** Удаляет плейлист целиком. Если удалили АКТИВНЫЙ — переключаемся на
+ * первый оставшийся; если не осталось ни одного — создаём пустой новый
+ * "Default Playlist" (тот же принцип, что и раньше: активный плейлист
+ * есть ВСЕГДА, без этого +Add/крестик сломались бы, не зная, куда
+ * персистить). */
+async function deletePlaylistById(id) {
+  await playlistStorage.deletePlaylist(id);
+  if (id === activePlaylistId) {
+    const remaining = await playlistStorage.getAllPlaylists();
+    if (remaining.length > 0) {
+      await loadPlaylistIntoUI(remaining[0]);
+    } else {
+      const newId = await playlistStorage.createPlaylist("Default Playlist", []);
+      const newPl = await playlistStorage.getPlaylist(newId);
+      await loadPlaylistIntoUI(newPl);
+    }
+  }
+  renderPlaylistsPopupList();
+}
+
+let pendingRenamePlaylistId = null;
+
+/** Открывает ту же самую строку ввода имени, что и для создания нового
+ * плейлиста (см. playlistsPopupNameRow ниже) — переиспользуем UI, не
+ * плодим отдельный второй попап под то же самое поле ввода. */
+function startRenamePlaylist(pl) {
+  pendingRenamePlaylistId = pl.id;
+  playlistsPopupNameRow.hidden = false;
+  playlistsPopupNameInput.value = pl.name;
+  playlistsPopupNameInput.focus();
+  playlistsPopupNameInput.select();
+  playlistsPopupNameConfirm.textContent = "Rename";
 }
 
 function openPlaylistsPopup() {
   playlistsPopupOverlay.hidden = false;
   playlistsPopupNameRow.hidden = true;
   playlistsPopupNameInput.value = "";
+  pendingRenamePlaylistId = null; // сбрасываем на случай незавершённого переименования из прошлого открытия
+  playlistsPopupNameConfirm.textContent = "Next";
   renderPlaylistsPopupList();
 }
 
@@ -1767,16 +1830,31 @@ playlistsPopupOverlay.addEventListener("click", (e) => {
 // pendingNewPlaylistName сигнализирует обработчику fileInput, что это
 // СОЗДАНИЕ нового плейлиста, а не добавление к текущему.
 playlistsPopupCreateBtn.addEventListener("click", () => {
+  pendingRenamePlaylistId = null; // на случай если до этого начинали переименование, но не завершили
   playlistsPopupNameRow.hidden = false;
+  playlistsPopupNameInput.value = "";
+  playlistsPopupNameConfirm.textContent = "Next";
   playlistsPopupNameInput.focus();
 });
 
-playlistsPopupNameConfirm.addEventListener("click", () => {
+playlistsPopupNameConfirm.addEventListener("click", async () => {
   const name = playlistsPopupNameInput.value.trim();
   if (!name) {
     playlistsPopupNameInput.focus();
     return;
   }
+
+  if (pendingRenamePlaylistId !== null) {
+    const id = pendingRenamePlaylistId;
+    pendingRenamePlaylistId = null;
+    await playlistStorage.renamePlaylist(id, name);
+    playlistsPopupNameConfirm.textContent = "Next";
+    playlistsPopupNameRow.hidden = true;
+    if (id === activePlaylistId) updatePlaylistsButtonLabel(name); // если переименовали именно АКТИВНЫЙ плейлист — подпись самой кнопки тоже должна обновиться
+    renderPlaylistsPopupList();
+    return;
+  }
+
   pendingNewPlaylistName = name;
   closePlaylistsPopup();
   fileInput.click();
@@ -1851,7 +1929,7 @@ async function bootstrapPlaylist() {
     const name = "Dorofeeva - Додайте світла (minus).mp3";
     const { title, artist } = parseTrackName(name);
     const trackId = await playlistStorage.addTrack(blob, name, title, artist);
-    const plId = await playlistStorage.createPlaylist("Дефолт плейлист", [trackId]);
+    const plId = await playlistStorage.createPlaylist("Default Playlist", [trackId]);
     const plRecord = await playlistStorage.getPlaylist(plId);
     await loadPlaylistIntoUI(plRecord);
   } catch (err) {
