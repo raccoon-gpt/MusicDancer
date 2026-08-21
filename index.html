@@ -137,6 +137,27 @@
         </div>
       </div>
     </div>
+
+    <!-- Попап "Settings" — в отличие от попапа плейлистов, не прижат к
+         низу экрана, а по центру (чуть выше середины). Сейчас внутри
+         только переключатель языка — сам по себе цикличная кнопка, той
+         же природы, что и масштаб сцены (ENG→UKR→RU→ENG...), БЕЗ
+         реального перевода интерфейса — та логика будет отдельной
+         следующей правкой, здесь только сам переключатель. -->
+    <div id="settings-popup-overlay" hidden>
+      <div id="settings-popup">
+        <div id="settings-popup-header">
+          <span>Settings</span>
+          <button id="settings-popup-close" aria-label="Close">✕</button>
+        </div>
+        <div id="settings-popup-content">
+          <div class="settings-row">
+            <span class="settings-row-label">Language</span>
+            <button id="settings-language-btn" class="settings-cycle-btn">ENG</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="js/main.js"></script>
