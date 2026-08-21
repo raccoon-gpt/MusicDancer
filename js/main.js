@@ -539,105 +539,6 @@ applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
   });
 })();
 
-// ВРЕМЕННО: кнопка "просмотр как на телефоне" — для тестирования будущей
-// мобильной адаптации. Обычный CSS @media реагирует на РЕАЛЬНЫЙ размер
-// окна браузера, а не на переключатель в JS — подделать это на уровне
-// одной страницы нельзя. Вместо этого открываем ту же страницу заново
-// внутри <iframe> мобильного размера — у iframe свой независимый
-// viewport, так что все настоящие @media-правила (в том числе будущие,
-// которых сейчас ещё нет) будут честно срабатывать внутри него, а не
-// имитироваться приблизительно. Состояние (загруженный трек, выбранный
-// персонаж) при этом НЕ переносится — это отдельная свежая сессия
-// страницы внутри рамки телефона, как отдельная вкладка.
-(function setupMobilePreviewToggle() {
-  const btn = document.createElement("button");
-  btn.id = "mobile-preview-toggle-btn"; // скрывается на реальном мобильном через @media, см. style.css
-  btn.textContent = "📱";
-  btn.title = "Тест мобильной версии (в рамке телефона)";
-  btn.style.position = "fixed";
-  btn.style.top = "12px";
-  btn.style.right = "116px"; // левее кнопки камеры (12 + 44 + 8, ещё раз)
-  btn.style.zIndex = "9999";
-  btn.style.width = "44px";
-  btn.style.height = "44px";
-  btn.style.border = "2px solid rgba(255,255,255,0.6)";
-  btn.style.borderRadius = "8px";
-  btn.style.cursor = "pointer";
-  btn.style.background = "rgba(0,0,0,0.4)";
-  btn.style.fontSize = "20px";
-  btn.style.lineHeight = "1";
-
-  let overlay = null;
-
-  function openPreview() {
-    overlay = document.createElement("div");
-    overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.zIndex = "100000"; // выше вообще всего на странице
-    overlay.style.background = "rgba(0,0,0,0.75)";
-    overlay.style.display = "flex";
-    overlay.style.alignItems = "center";
-    overlay.style.justifyContent = "center";
-    overlay.style.gap = "16px";
-    overlay.style.flexDirection = "column";
-
-    const closeHint = document.createElement("div");
-    closeHint.textContent = "Клик мимо рамки — закрыть";
-    closeHint.style.color = "#fff";
-    closeHint.style.fontFamily = "sans-serif";
-    closeHint.style.fontSize = "13px";
-    closeHint.style.opacity = "0.7";
-
-    const phoneFrame = document.createElement("div");
-    // aspect-ratio — не фиксированные width+max-height по отдельности
-    // (тот подход ломал пропорции при любом масштабе/размере окна, где
-    // 90vh оказывался МЕНЬШЕ 844px: высота обрезалась по max-height, а
-    // ширина оставалась жёстко 390px, не пересчитываясь — рамка
-    // "сплющивалась"). С aspect-ratio ширина всегда производная от
-    // высоты, пропорция реального iPhone 14 (390:844) держится всегда.
-    phoneFrame.style.height = "min(844px, 90vh)";
-    phoneFrame.style.width = "auto";
-    phoneFrame.style.maxWidth = "95vw"; // на случай узкого десктопного окна
-    phoneFrame.style.aspectRatio = "390 / 844";
-    phoneFrame.style.border = "10px solid #222";
-    phoneFrame.style.borderRadius = "36px";
-    phoneFrame.style.overflow = "hidden";
-    phoneFrame.style.boxShadow = "0 0 40px rgba(0,0,0,0.6)";
-
-    const iframe = document.createElement("iframe");
-    iframe.src = window.location.href;
-    iframe.style.width = "100%";
-    iframe.style.height = "100%";
-    iframe.style.border = "none";
-    phoneFrame.appendChild(iframe);
-
-    // Клик по тёмному фону вокруг рамки закрывает — по самой рамке нет
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay || e.target === closeHint) closePreview();
-    });
-
-    overlay.appendChild(closeHint);
-    overlay.appendChild(phoneFrame);
-    document.body.appendChild(overlay);
-    btn.style.background = "rgba(120,170,255,0.6)";
-  }
-
-  function closePreview() {
-    overlay?.remove();
-    overlay = null;
-    btn.style.background = "rgba(0,0,0,0.4)";
-  }
-
-  btn.addEventListener("click", () => {
-    if (overlay) {
-      closePreview();
-    } else {
-      openPreview();
-    }
-  });
-
-  document.body.appendChild(btn);
-})();
 
 const clock = new THREE.Clock();
 
@@ -948,7 +849,7 @@ const CHARACTERS = {
   },
   raccoon: {
     label: "Raccoon",
-    avatarEmoji: "🦝", // картинки пока нет — заглушка до присылки реальной аватарки
+    avatarSrc: "assets/ui/raccoon-avatar.png",
     characterUrl: "assets/character-fbx-raccoon/Breathing_Idle.fbx",
     // Хвост енота теперь исправлен на уровне самого FBX-файла (Blender,
     // укорочен + перенесён по проверенной схеме из README) — рантайм-патч
@@ -1150,7 +1051,7 @@ function renderPicker() {
 
   if (pickerMode === "switch") {
     duetBtn.title = "Duet — выбрать нескольких";
-    duetBtn.textContent = "👯";
+    duetBtn.textContent = "Partners";
     duetBtn.setAttribute("aria-pressed", "false");
     duetBtn.disabled = false;
     duetBtn.addEventListener("click", () => {
@@ -1169,7 +1070,12 @@ function renderPicker() {
     const cameFromDuet = activeCharacterIds.length >= 2;
     const ready = pendingSelection.size >= (cameFromDuet ? 1 : 2);
     duetBtn.title = ready ? "Подтвердить выбор" : "Выберите ещё персонажа";
-    duetBtn.textContent = ready ? "✓" : "👯";
+    if (ready) {
+      duetBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    } else {
+      duetBtn.textContent = "Partners";
+    }
     duetBtn.setAttribute("aria-pressed", String(ready));
     duetBtn.disabled = !ready;
     if (ready) {
