@@ -1039,6 +1039,15 @@ function renderPicker() {
       btn.addEventListener("click", () => {
         if (pendingSelection.has(id)) pendingSelection.delete(id);
         else pendingSelection.add(id);
+        // Сняли ВСЕХ персонажей (0 выбрано) — кнопка "Partners" иначе
+        // осталась бы неактивной без возможности ни подтвердить (нечего
+        // подтверждать), ни выйти из режима выбора обратно. Пользователь
+        // мог просто передумать делать дуэт и захотеть заменить одного
+        // персонажа на другого напрямую — возвращаем в обычный режим
+        // соло-переключения, а не оставляем в тупиковом состоянии.
+        if (pendingSelection.size === 0) {
+          pickerMode = "switch";
+        }
         renderPicker();
       });
       avatarPickerEl.appendChild(btn);
