@@ -2230,7 +2230,7 @@ function renderLoop() {
     });
 
     if (debugEnabled) {
-      dbgVolume.textContet = features.volume.toFixed(2);
+      dbgVolume.textContent = features.volume.toFixed(2);
       dbgBass.textContent = features.bass.toFixed(2);
       dbgMid.textContent = features.mid.toFixed(2);
       dbgTreble.textContent = features.treble.toFixed(2);
