@@ -1082,8 +1082,10 @@ function renderPicker() {
     if (ready) {
       duetBtn.innerHTML =
         '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      duetBtn.classList.add("is-icon-only"); // без этого те же боковые padding, что нужны под слово "Partners", растягивали маленькую 18px-иконку в "таблетку" 46×36 вместо круга 36×36
     } else {
       duetBtn.textContent = "Partners";
+      duetBtn.classList.remove("is-icon-only");
     }
     duetBtn.setAttribute("aria-pressed", String(ready));
     duetBtn.disabled = !ready;
