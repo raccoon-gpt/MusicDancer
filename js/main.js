@@ -7,6 +7,7 @@ import { createAudioAnalyzer, createIntensityTracker } from "./audioAnalyzer.js"
 import { createBeatDetector } from "./beatDetector.js";
 import { computeWaveformPeaks, drawWaveform, drawFlatline } from "./waveform.js";
 import * as playlistStorage from "./playlistStorage.js";
+import { t, getLanguage, setLanguage } from "./i18n.js";
 
 const container = document.getElementById("scene-container");
 const { scene, camera, renderer, placeholder, controls, resize } = createScene(container);
@@ -583,8 +584,16 @@ const trackTitleTextEl = document.getElementById("track-title-text");
 const trackArtistEl = document.getElementById("track-artist-mobile");
 // Плейсхолдеры, пока трек ещё не выбран — блок теперь виден всегда
 // (см. style.css), не только после первого выбранного трека.
-trackTitleTextEl.textContent = "Track";
-trackArtistEl.textContent = "Author";
+// Плейсхолдеры, пока трек ещё не выбран — блок теперь виден всегда
+// (см. style.css), не только после первого выбранного трека.
+// trackTitleIsPlaceholder/trackArtistIsPlaceholder — раздельно (не один
+// общий флаг): у трека может быть, например, название без исполнителя
+// — тогда именно поле исполнителя должно оставаться плейсхолдером и
+// переводиться при смене языка, а название (реальные данные) — нет.
+let trackTitleIsPlaceholder = true;
+let trackArtistIsPlaceholder = true;
+trackTitleTextEl.textContent = t("track");
+trackArtistEl.textContent = t("author");
 const shuffleBtn = document.getElementById("shuffle-btn");
 const prevTrackBtn = document.getElementById("prev-track-btn");
 const nextTrackBtn = document.getElementById("next-track-btn");
@@ -1091,7 +1100,7 @@ function renderPicker() {
 
   if (pickerMode === "switch") {
     duetBtn.title = "Duet — выбрать нескольких";
-    duetBtn.textContent = "Partners";
+    duetBtn.textContent = t("partners");
     duetBtn.setAttribute("aria-pressed", "false");
     duetBtn.disabled = false;
     duetBtn.addEventListener("click", () => {
@@ -1115,7 +1124,7 @@ function renderPicker() {
         '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
       duetBtn.classList.add("is-icon-only"); // без этого те же боковые padding, что нужны под слово "Partners", растягивали маленькую 18px-иконку в "таблетку" 46×36 вместо круга 36×36
     } else {
-      duetBtn.textContent = "Partners";
+      duetBtn.textContent = t("partners");
       duetBtn.classList.remove("is-icon-only");
     }
     duetBtn.setAttribute("aria-pressed", String(ready));
@@ -1459,7 +1468,7 @@ function renderPlaylistList() {
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "playlist-item-delete";
-    deleteBtn.setAttribute("aria-label", "Удалить трек из плейлиста");
+    deleteBtn.setAttribute("aria-label", t("deleteTrackAria"));
     deleteBtn.innerHTML =
       '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
     deleteBtn.addEventListener("click", () => deleteTrackAtIndex(i));
@@ -1485,8 +1494,10 @@ function deleteTrackAtIndex(i) {
   if (playlist.length === 0) {
     currentTrackIndex = -1;
     player.pause();
-    trackTitleTextEl.textContent = "Track";
-    trackArtistEl.textContent = "Author";
+    trackTitleIsPlaceholder = true;
+    trackArtistIsPlaceholder = true;
+    trackTitleTextEl.textContent = t("track");
+    trackArtistEl.textContent = t("author");
     trackNameEl.textContent = "";
     playBtn.disabled = true;
     progress.disabled = true;
@@ -1518,8 +1529,10 @@ function loadTrackAtIndex(index) {
 
   player.loadFile(file); // локально, файл никуда не отправляется (ТЗ п.17)
   trackNameEl.textContent = name;
-  trackTitleTextEl.textContent = title || "Track";
-  trackArtistEl.textContent = artist || "Author";
+  trackTitleIsPlaceholder = !title;
+  trackArtistIsPlaceholder = !artist;
+  trackTitleTextEl.textContent = title || t("track");
+  trackArtistEl.textContent = artist || t("author");
   renderPlaylistList(); // подсветка "играет сейчас" на новую строку
   beatDetector.reset(); // новый трек — старый baseline не имеет смысла
   intensityTracker.reset();
@@ -1698,7 +1711,7 @@ async function renderPlaylistsPopupList() {
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "playlists-popup-item-edit";
-    editBtn.setAttribute("aria-label", "Rename playlist");
+    editBtn.setAttribute("aria-label", t("renamePlaylistAria"));
     editBtn.innerHTML =
       '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
     editBtn.addEventListener("click", () => startRenamePlaylist(pl));
@@ -1706,7 +1719,7 @@ async function renderPlaylistsPopupList() {
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "playlists-popup-item-delete";
-    deleteBtn.setAttribute("aria-label", "Delete playlist");
+    deleteBtn.setAttribute("aria-label", t("deletePlaylistAria"));
     deleteBtn.innerHTML =
       '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
     deleteBtn.addEventListener("click", () => deletePlaylistById(pl.id));
@@ -1749,7 +1762,7 @@ function startRenamePlaylist(pl) {
   playlistsPopupNameInput.value = pl.name;
   playlistsPopupNameInput.focus();
   playlistsPopupNameInput.select();
-  playlistsPopupNameConfirm.textContent = "Rename";
+  playlistsPopupNameConfirm.textContent = t("rename");
 }
 
 function openPlaylistsPopup() {
@@ -1757,7 +1770,7 @@ function openPlaylistsPopup() {
   playlistsPopupNameRow.hidden = true;
   playlistsPopupNameInput.value = "";
   pendingRenamePlaylistId = null; // сбрасываем на случай незавершённого переименования из прошлого открытия
-  playlistsPopupNameConfirm.textContent = "Next";
+  playlistsPopupNameConfirm.textContent = t("next");
   renderPlaylistsPopupList();
 }
 
@@ -1781,7 +1794,7 @@ playlistsPopupCreateBtn.addEventListener("click", () => {
   pendingRenamePlaylistId = null; // на случай если до этого начинали переименование, но не завершили
   playlistsPopupNameRow.hidden = false;
   playlistsPopupNameInput.value = "";
-  playlistsPopupNameConfirm.textContent = "Next";
+  playlistsPopupNameConfirm.textContent = t("next");
   playlistsPopupNameInput.focus();
 });
 
@@ -1796,7 +1809,7 @@ playlistsPopupNameConfirm.addEventListener("click", async () => {
     const id = pendingRenamePlaylistId;
     pendingRenamePlaylistId = null;
     await playlistStorage.renamePlaylist(id, name);
-    playlistsPopupNameConfirm.textContent = "Next";
+    playlistsPopupNameConfirm.textContent = t("next");
     playlistsPopupNameRow.hidden = true;
     if (id === activePlaylistId) updatePlaylistsButtonLabel(name); // если переименовали именно АКТИВНЫЙ плейлист — подпись самой кнопки тоже должна обновиться
     renderPlaylistsPopupList();
@@ -1829,12 +1842,41 @@ settingsPopupOverlay.addEventListener("click", (e) => {
 // перевода интерфейса за этим не стоит — подключение языков (i18n,
 // перевод всех надписей) будет отдельной следующей правкой.
 const LANGUAGE_STEPS = ["ENG", "UKR", "RU"];
-let languageIndex = 0;
+let languageIndex = Math.max(0, LANGUAGE_STEPS.indexOf(getLanguage())); // подхватываем сохранённый язык (localStorage, см. i18n.js), а не всегда стартуем с ENG
+settingsLanguageBtn.textContent = LANGUAGE_STEPS[languageIndex];
 
 settingsLanguageBtn.addEventListener("click", () => {
   languageIndex = (languageIndex + 1) % LANGUAGE_STEPS.length;
   settingsLanguageBtn.textContent = LANGUAGE_STEPS[languageIndex];
+  setLanguage(LANGUAGE_STEPS[languageIndex]);
+  applyTranslations();
 });
+
+/** Применяет текущий язык (см. i18n.js) ко всем переводимым элементам
+ * статичного "хрома" интерфейса. НЕ трогает пользовательский контент
+ * (названия плейлистов, названия/исполнителей реальных треков) — только
+ * плейсхолдеры и подписи кнопок/попапов. Вызывается один раз при
+ * старте страницы и при каждой смене языка. */
+function applyTranslations() {
+  playlistAddBtn.textContent = t("addTrack");
+  document.getElementById("playlists-popup-title").textContent = t("playlists");
+  playlistsPopupClose.setAttribute("aria-label", t("close"));
+  playlistsPopupCreateBtn.textContent = t("newPlaylist");
+  playlistsPopupNameInput.placeholder = t("playlistNamePlaceholder");
+  playlistsPopupNameConfirm.textContent = pendingRenamePlaylistId !== null ? t("rename") : t("next");
+  document.getElementById("settings-popup-title").textContent = t("settings");
+  settingsPopupClose.setAttribute("aria-label", t("close"));
+  document.querySelector(".settings-row-label").textContent = t("language");
+
+  if (trackTitleIsPlaceholder) trackTitleTextEl.textContent = t("track");
+  if (trackArtistIsPlaceholder) trackArtistEl.textContent = t("author");
+
+  // Список плейлистов в попапе — там же и aria-label крестика/карандаша
+  // (deleteTrackAria и т.п.) у каждой строки, проще перерисовать заново
+  // целиком, чем точечно менять атрибуты у уже существующих элементов.
+  renderPlaylistsPopupList();
+}
+applyTranslations();
 
 // --- Активный плейлист (сохраняется в IndexedDB, переживает перезагрузку
 // страницы) ---
@@ -2193,48 +2235,4 @@ function renderLoop() {
       dbgMid.textContent = features.mid.toFixed(2);
       dbgTreble.textContent = features.treble.toFixed(2);
       dbgIntensity.textContent = intensity.toFixed(2);
-      dbgBeatDot.classList.toggle("active", performance.now() - lastBeatFlashAt < 120);
-      dbgBeatDot.classList.toggle("strong", performance.now() - lastStrongBeatFlashAt < 200);
-    }
-  } else if (smartCameraEnabled) {
-    // Музыка вообще не играет (пауза/ещё не запущена/трек закончился).
-    smartCameraDrivingThisFrame = true;
-    driveCameraHome(delta);
-  } else if (smartCameraReturningHome) {
-    // Умную камеру выключили во время паузы/до старта — тот же плавный
-    // возврат, тоже отпускаем управление, как только подлетели близко.
-    smartCameraDrivingThisFrame = true;
-    driveCameraHome(delta);
-    if (camera.position.distanceTo(HOME_CAMERA_POSITION) < SMART_CAMERA_HOME_SNAP_DISTANCE) {
-      smartCameraReturningHome = false;
-    }
-  }
-
-  const activeSlots = Object.values(slots);
-  if (activeSlots.length > 0) {
-    // Раньше здесь была заморозка mixer на паузе — но по факту нужно не
-    // "замереть на середине танца", а честно проигрывать Breathing Idle.
-    // Переключение на idle происходит один раз в onPause(); mixer тикает
-    // всегда, чтобы эта же idle-анимация могла дышать во время паузы.
-    activeSlots.forEach((slot) => slot.mixer?.update(delta));
-  } else {
-    placeholder.rotation.y += delta * 0.6;
-  }
-
-  // controls.update() пересчитывает камеру из своего внутреннего
-  // состояния (сферические координаты) — если в этом кадре умная камера
-  // (включая плавный возврат домой) уже сама выставила camera.position
-  // напрямую, вызывать его не нужно (он бы тут же перезаписал нашу
-  // позицию своей). В остальное время (ручное вращение мышью/тачем,
-  // демпфирование) он должен работать как обычно.
-  if (!smartCameraDrivingThisFrame) {
-    controls.update();
-  }
-
-  soundWave.update(delta, spectrumBarsThisFrame, strongBeatThisFrame);
-
-  renderer.render(scene, camera);
-  window.__updateEdgeBlurCanvas?.();
-}
-
-renderLoop();
+      dbgBeatDot.classList.toggle("active", performance.now() 
