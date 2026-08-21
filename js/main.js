@@ -434,6 +434,34 @@ window.addEventListener("resize", () => {
   if (sceneHeightScaleIndex !== -1) applySceneHeightScale();
 });
 
+// Кнопка-шестерёнка (Settings) — та же строка, что камера/масштаб/волна,
+// но с ЛЕВОЙ стороны (те три — справа), тот же mobileFadeButtons — тоже
+// появляется по касанию сцены, не отдельная логика показа.
+(function setupSettingsToggle() {
+  const btn = document.createElement("button");
+  btn.className = "mobile-fade-btn";
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
+  btn.title = "Settings";
+  btn.style.position = "fixed";
+  btn.style.top = "12px";
+  btn.style.left = "12px"; // зеркально волне (right:12px) — противоположная сторона того же ряда
+  btn.style.zIndex = "9999";
+  btn.style.width = "44px";
+  btn.style.height = "44px";
+  btn.style.border = "2px solid rgba(255,255,255,0.6)";
+  btn.style.borderRadius = "8px";
+  btn.style.cursor = "pointer";
+  btn.style.background = "rgba(0,0,0,0.4)";
+  btn.style.color = "#fff";
+  btn.style.display = "flex";
+  btn.style.alignItems = "center";
+  btn.style.justifyContent = "center";
+  btn.addEventListener("click", openSettingsPopup);
+  document.body.appendChild(btn);
+  mobileFadeButtons.push(btn);
+})();
+
 // --- Кнопка смены режимов Sound Wave (справа от кнопки камеры) ---
 // Три режима по кругу: "blur" (размытие, по умолчанию) → "normal"
 // (чёткие столбики) → "off" (волна выключена совсем, обычный экран) →
@@ -574,6 +602,9 @@ const playlistsPopupCreateBtn = document.getElementById("playlists-popup-create-
 const playlistsPopupNameRow = document.getElementById("playlists-popup-name-row");
 const playlistsPopupNameInput = document.getElementById("playlists-popup-name-input");
 const playlistsPopupNameConfirm = document.getElementById("playlists-popup-name-confirm");
+const settingsPopupOverlay = document.getElementById("settings-popup-overlay");
+const settingsPopupClose = document.getElementById("settings-popup-close");
+const settingsLanguageBtn = document.getElementById("settings-language-btn");
 const waveformCanvas = document.getElementById("waveform-canvas");
 const waveformToggleBtn = document.getElementById("waveform-toggle");
 
@@ -1775,6 +1806,34 @@ playlistsPopupNameConfirm.addEventListener("click", async () => {
   pendingNewPlaylistName = name;
   closePlaylistsPopup();
   fileInput.click();
+});
+
+// --- Попап "Settings" ---
+function openSettingsPopup() {
+  settingsPopupOverlay.hidden = false;
+}
+
+function closeSettingsPopup() {
+  settingsPopupOverlay.hidden = true;
+}
+
+settingsPopupClose.addEventListener("click", closeSettingsPopup);
+// Клик по тёмному фону вокруг попапа — тоже закрывает (не по самой карточке), тот же принцип, что и у попапа плейлистов.
+settingsPopupOverlay.addEventListener("click", (e) => {
+  if (e.target === settingsPopupOverlay) closeSettingsPopup();
+});
+
+// Переключатель языка — циклическая кнопка, та же природа, что и
+// масштаб сцены (см. SCENE_HEIGHT_SCALE_STEPS выше): ENG → UKR → RU →
+// снова ENG. ВАЖНО: это пока только сама кнопка/UI-состояние, реального
+// перевода интерфейса за этим не стоит — подключение языков (i18n,
+// перевод всех надписей) будет отдельной следующей правкой.
+const LANGUAGE_STEPS = ["ENG", "UKR", "RU"];
+let languageIndex = 0;
+
+settingsLanguageBtn.addEventListener("click", () => {
+  languageIndex = (languageIndex + 1) % LANGUAGE_STEPS.length;
+  settingsLanguageBtn.textContent = LANGUAGE_STEPS[languageIndex];
 });
 
 // --- Активный плейлист (сохраняется в IndexedDB, переживает перезагрузку
