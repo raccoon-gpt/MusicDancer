@@ -168,10 +168,11 @@ html, body {
 .picker-avatar-btn,
 .picker-duet-btn {
   flex: 0 0 auto;
-  width: 36px;
+  width: auto;
+  min-width: 36px;
   height: 36px;
-  border-radius: 50%;
-  padding: 0;
+  padding: 0 14px; /* было padding:0 + фиксированные 36×36 круг — под один эмодзи-символ; слово "Partners" в круг не влезает, теперь "таблетка" с авто-шириной */
+  border-radius: 18px; /* половина высоты — "таблетка", не 50% (тот давал круг только для равных сторон) */
   cursor: pointer;
   background-color: #262a33;
   background-repeat: no-repeat;
@@ -276,6 +277,9 @@ html, body {
 
 .picker-duet-btn {
   font-size: 16px;
+  color: #d5d8dd; /* раньше не нужно было — эмодзи цветной сам по себе, слово "Partners" нужно явно подсветить */
+  white-space: nowrap;
+  font-weight: 600;
 }
 
 .picker-duet-btn:disabled {
@@ -835,12 +839,6 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     scroll-snap-align: start;
   }
 
-  /* Кнопка предпросмотра мобильной версии (📱) бессмысленна, когда и
-     так открыто на реальном телефоне — только на десктопе для теста. */
-  #mobile-preview-toggle-btn {
-    display: none;
-  }
-
   /* Камера (🎥) и режим волны — скрыты по умолчанию, появляются по
      касанию области сцены (или клику мышью), сами прячутся через 3с;
      если пользователь коснулся именно кнопки — держится 5с от
@@ -1103,6 +1101,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     padding: 10px 14px;
     border-radius: 10px;
     border: 1.5px solid #4a4f5c;
+    outline: none; /* без этого браузер добавляет свой системный focus-контур (жёлто-белый на Android) ПОВЕРХ этой рамки — вместе давало вид "двойной" рамки */
     background: #14161b;
     color: #fff;
     font-size: 14px;
