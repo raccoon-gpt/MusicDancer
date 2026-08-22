@@ -22,7 +22,7 @@ export const translations = {
   rename: { ENG: "Rename", UKR: "Перейменувати", RU: "Переименовать" },
   track: { ENG: "Track", UKR: "Трек", RU: "Трек" },
   author: { ENG: "Author", UKR: "Автор", RU: "Автор" },
-  partners: { ENG: "Partners", UKR: "Партнери", RU: "Партнёры" },
+  partners: { ENG: "Partners", UKR: "Пара", RU: "Пара" },
   settings: { ENG: "Settings", UKR: "Налаштування", RU: "Настройки" },
   language: { ENG: "Language", UKR: "Мова", RU: "Язык" },
   renamePlaylistAria: { ENG: "Rename playlist", UKR: "Перейменувати плейлист", RU: "Переименовать плейлист" },
