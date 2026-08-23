@@ -154,9 +154,30 @@ export function createScene(container) {
   // немедленного вызова, а для потока частых событий (плавная
   // CSS-анимация шторки) всё равно схлопывает лишние вызовы до одного
   // на кадр.
+  // resizeSuspended — для случая, когда throttle (раз в кадр) всё ещё
+  // недостаточно: МЕДЛЕННОЕ, растянутое на секунды непрерывное
+  // перетаскивание хендла шторки списка (не быстрый клик/переключение
+  // кнопкой — там throttle справляется хорошо). При медленном движении
+  // события изменения размера и так идут примерно раз за кадр — throttle
+  // почти ничего не убирает, дорогая renderer.setSize() продолжает
+  // вызываться на каждом кадре ВСЁ ВРЕМЯ перетаскивания (может быть
+  // несколько секунд, не 0.25s разовой анимации) — заметное мигание.
+  // Пока resizeSuspended=true — буфер вообще не трогаем, персонаж
+  // остаётся при тех пропорциях, что были на момент начала
+  // перетаскивания (лёгкое, но плавное несоответствие форме — не
+  // мигание). Один точный финальный resize() — сразу по окончании
+  // перетаскивания (см. setResizeSuspended, вызывается из main.js на
+  // pointerup хендла).
+  let resizeSuspended = false;
+  function setResizeSuspended(suspended) {
+    resizeSuspended = suspended;
+    if (!suspended) resize();
+  }
+
   if (typeof ResizeObserver !== "undefined") {
     let resizeRafPending = false;
     const throttledResize = () => {
+      if (resizeSuspended) return;
       if (resizeRafPending) return;
       resizeRafPending = true;
       requestAnimationFrame(() => {
@@ -167,7 +188,7 @@ export function createScene(container) {
     new ResizeObserver(throttledResize).observe(container);
   }
 
-  return { scene, camera, renderer, placeholder, controls, resize };
+  return { scene, camera, renderer, placeholder, controls, resize, setResizeSuspended };
 }
 
 /**
