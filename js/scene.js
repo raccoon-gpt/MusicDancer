@@ -135,7 +135,23 @@ export function createScene(container) {
   // причины — универсальный фикс, не только для этого конкретного
   // триггера.
   if (typeof ResizeObserver !== "undefined") {
-    new ResizeObserver(resize).observe(container);
+    // ВАЖНО: подключаем НЕ resize() напрямую, а debouncedResize(). Во
+    // время плавной CSS-анимации (например, выезд/заезд шторки списка
+    // треков — 0.25s transition на flex-basis) размер контейнера меняется
+    // почти на каждом кадре — ResizeObserver честно стреляет десятки раз
+    // подряд. resize() внутри дёргает renderer.setSize(), которая
+    // пересоздаёт внутренний WebGL-буфер — недёшево, и десятки таких
+    // вызовов подряд визуально давали заметный "спотыкач"/дёрганость
+    // именно во время анимации шторки. Debounce откладывает реальную
+    // тяжёлую работу до момента, когда изменения размера УТИХНУТ (80мс
+    // без новых срабатываний) — вместо 15+ вызовов за анимацию получаем
+    // ровно один, сразу после её завершения.
+    let resizeDebounceTimer = null;
+    const debouncedResize = () => {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(resize, 80);
+    };
+    new ResizeObserver(debouncedResize).observe(container);
   }
 
   return { scene, camera, renderer, placeholder, controls, resize };
