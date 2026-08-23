@@ -121,7 +121,17 @@ export function createSoundWave(container) {
   // при ресайзе окна), просто менее заметный — не "призрак" персонажа, а
   // лёгкая смазанность/неверный масштаб полос.
   if (typeof ResizeObserver !== "undefined") {
-    new ResizeObserver(resize).observe(container);
+    // Debounce — та же причина, что и в scene.js: canvas.width = ...
+    // внутри resize() МГНОВЕННО очищает содержимое канваса при каждом
+    // присвоении. Во время плавной CSS-анимации (выезд/заезд шторки
+    // списка) ResizeObserver стреляет десятки раз подряд — без debounce
+    // волна заметно мигала/дёргалась в процессе анимации.
+    let resizeDebounceTimer = null;
+    const debouncedResize = () => {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(resize, 80);
+    };
+    new ResizeObserver(debouncedResize).observe(container);
   }
 
   let time = 0;
