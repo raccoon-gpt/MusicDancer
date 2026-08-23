@@ -285,18 +285,29 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: #8a8f98;
   cursor: pointer;
   padding: 0;
   font-size: 16px;
 }
 
+/* "+" (добавить танец) — просили только форму круглой, ЦВЕТА оставить
+   как были изначально (обычные dance-toggle-btn: прозрачный фон, серая
+   обводка) — не наследовать цветовую схему крестика. */
+.dance-icon-btn.is-add {
+  border: 1px solid #33384a;
+  background: transparent;
+  color: #8a8f98;
+}
+
 /* Крестик удаления персонажа — идентично .playlist-item-delete
    (крестик удаления трека в списке): тот же цвет/фон в покое, та же
-   красная подсветка при нажатии. "+" (добавить танец) эту красную
-   подсветку не получает — это не опасное действие. */
+   красная подсветка при нажатии. */
+.dance-icon-btn.is-delete {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #8a8f98;
+}
+
 .dance-icon-btn.is-delete:active {
   background: rgba(255, 90, 90, 0.25);
   color: #ff8a8a;
