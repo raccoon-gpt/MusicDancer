@@ -121,17 +121,25 @@ export function createSoundWave(container) {
   // при ресайзе окна), просто менее заметный — не "призрак" персонажа, а
   // лёгкая смазанность/неверный масштаб полос.
   if (typeof ResizeObserver !== "undefined") {
-    // Debounce — та же причина, что и в scene.js: canvas.width = ...
-    // внутри resize() МГНОВЕННО очищает содержимое канваса при каждом
-    // присвоении. Во время плавной CSS-анимации (выезд/заезд шторки
-    // списка) ResizeObserver стреляет десятки раз подряд — без debounce
-    // волна заметно мигала/дёргалась в процессе анимации.
-    let resizeDebounceTimer = null;
-    const debouncedResize = () => {
-      clearTimeout(resizeDebounceTimer);
-      resizeDebounceTimer = setTimeout(resize, 80);
+    // rAF-throttle, не debounce с фиксированной задержкой — та же
+    // причина, что и в scene.js (см. подробный комментарий там):
+    // фиксированная задержка (было 80мс) заметна там, где нет частой
+    // стрельбы событий (например, мгновенный прыжок размера от кнопки
+    // масштаба сцены) — добавляла искусственную задержку туда, где её
+    // не должно быть. requestAnimationFrame схлопывает частые
+    // срабатывания (плавная CSS-анимация шторки) до одного вызова на
+    // кадр (~16мс, незаметно), а одиночный мгновенный ресайз обновляется
+    // всё так же быстро, без произвольной задержки.
+    let resizeRafPending = false;
+    const throttledResize = () => {
+      if (resizeRafPending) return;
+      resizeRafPending = true;
+      requestAnimationFrame(() => {
+        resizeRafPending = false;
+        resize();
+      });
     };
-    new ResizeObserver(debouncedResize).observe(container);
+    new ResizeObserver(throttledResize).observe(container);
   }
 
   let time = 0;
