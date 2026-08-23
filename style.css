@@ -1071,81 +1071,6 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     justify-content: center;
   }
 
-  /* --- Попап "Settings" --- */
-  /* :not([hidden]) — та же причина, что и у попапа плейлистов выше
-     (специфичность ID-селектора иначе побеждала бы [hidden]). */
-  #settings-popup-overlay:not([hidden]) {
-    display: flex;
-  }
-
-  #settings-popup-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100000;
-    background: rgba(0, 0, 0, 0.55);
-    align-items: center; /* по центру экрана, не снизу — в отличие от попапа плейлистов */
-    justify-content: center;
-  }
-
-  #settings-popup {
-    width: calc(100% - 40px);
-    max-width: 420px;
-    /* "Чуть выше середины" — сдвигаем вверх от чистого центра. */
-    transform: translateY(-8vh);
-    background: #1c1f27;
-    border-radius: 20px;
-    padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  #settings-popup-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 16px;
-    font-weight: 700;
-    color: #fff;
-  }
-
-  #settings-popup-close {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(255, 255, 255, 0.08);
-    color: #d5d8dd;
-    font-size: 16px;
-    cursor: pointer;
-  }
-
-  .settings-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .settings-row-label {
-    color: #d5d8dd;
-    font-size: 14px;
-  }
-
-  /* Циклическая кнопка (ENG→UKR→RU→...) — тот же язык оформления, что и
-     у #playlists-btn (обводка, не заливка). */
-  .settings-cycle-btn {
-    flex: 0 0 auto;
-    min-width: 64px;
-    padding: 8px 16px;
-    border-radius: 999px;
-    border: 1.5px solid #4a4f5c;
-    background: transparent;
-    color: #d5d8dd;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-  }
 
   #playlists-popup {
     width: 100%;
@@ -1411,4 +1336,85 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     overflow: hidden;
     white-space: nowrap;
   }
+}
+
+/* --- Попап "Settings" — ВНЕ мобильного @media: кнопка-шестерёнка
+   видна на обеих платформах (mobile-fade-btn, не mobile-only-control,
+   как у плейлистов) — раньше весь этот блок был ошибочно засунут ТОЛЬКО
+   внутрь мобильного @media, из-за чего на десктопе попап показывался
+   вообще без стилей (голый текст внизу страницы). --- */
+/* --- Попап "Settings" --- */
+/* :not([hidden]) — та же причина, что и у попапа плейлистов выше
+   (специфичность ID-селектора иначе побеждала бы [hidden]). */
+#settings-popup-overlay:not([hidden]) {
+  display: flex;
+}
+
+#settings-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.55);
+  align-items: center; /* по центру экрана, не снизу — в отличие от попапа плейлистов */
+  justify-content: center;
+}
+
+#settings-popup {
+  width: calc(100% - 40px);
+  max-width: 420px;
+  /* "Чуть выше середины" — сдвигаем вверх от чистого центра. */
+  transform: translateY(-8vh);
+  background: #1c1f27;
+  border-radius: 20px;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#settings-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+#settings-popup-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d5d8dd;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-row-label {
+  color: #d5d8dd;
+  font-size: 14px;
+}
+
+/* Циклическая кнопка (ENG→UKR→RU→...) — тот же язык оформления, что и
+   у #playlists-btn (обводка, не заливка). */
+.settings-cycle-btn {
+  flex: 0 0 auto;
+  min-width: 64px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1.5px solid #4a4f5c;
+  background: transparent;
+  color: #d5d8dd;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
