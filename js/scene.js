@@ -117,6 +117,24 @@ export function createScene(container) {
     renderer.setSize(w, h);
   }
 
+  // Отдельно — ТОЛЬКО пересчёт пропорций камеры, без дорогого
+  // renderer.setSize() (тот пересоздаёт WebGL-буфер). Сам canvas
+  // растягивается CSS-правилом width:100%/height:100% НЕМЕДЛЕННО, на
+  // каждом кадре, независимо от debounce ниже — а вот то, ПОД КАКИЕ
+  // пропорции рисуется картинка внутри, раньше обновлялось только вместе
+  // с отложенным renderer.setSize(). Расхождение между "уже растянутый
+  // элемент" и "всё ещё рисуется под старые пропорции" и давало
+  // деформацию персонажа во время анимации шторки списка треков — эта
+  // часть дешёвая, её можно (и нужно) делать на каждом кадре без
+  // задержки, оставляя debounce только для по-настоящему дорогой части.
+  function updateCameraAspectOnly() {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w === 0 || h === 0) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
   window.addEventListener("resize", resize);
   // ВАЖНО: renderer.setSize() прописывает style.width/height канваса
   // ИНЛАЙН-СТИЛЕМ в пикселях (не через %) — побеждает любой CSS. window
@@ -145,9 +163,11 @@ export function createScene(container) {
     // именно во время анимации шторки. Debounce откладывает реальную
     // тяжёлую работу до момента, когда изменения размера УТИХНУТ (80мс
     // без новых срабатываний) — вместо 15+ вызовов за анимацию получаем
-    // ровно один, сразу после её завершения.
+    // ровно один, сразу после её завершения. updateCameraAspectOnly() —
+    // НЕ отложена, вызывается сразу на каждом срабатывании (дешёвая).
     let resizeDebounceTimer = null;
     const debouncedResize = () => {
+      updateCameraAspectOnly();
       clearTimeout(resizeDebounceTimer);
       resizeDebounceTimer = setTimeout(resize, 80);
     };
