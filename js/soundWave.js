@@ -120,6 +120,19 @@ export function createSoundWave(container) {
   // с реальным размером контейнера при изменениях разметки, не только
   // при ресайзе окна), просто менее заметный — не "призрак" персонажа, а
   // лёгкая смазанность/неверный масштаб полос.
+  // resizeSuspended — см. подробный комментарий в scene.js: то же самое
+  // для волны — при медленном непрерывном перетаскивании хендла шторки
+  // canvas.width = ... (внутри resize()) мгновенно очищает содержимое
+  // канваса на каждом кадре, всё время перетаскивания — заметное
+  // мигание. Пока suspended=true — просто не трогаем канвас вообще;
+  // один точный resize() — сразу по окончании (см. setResizeSuspended,
+  // main.js на pointerup хендла).
+  let resizeSuspended = false;
+  function setResizeSuspended(suspended) {
+    resizeSuspended = suspended;
+    if (!suspended) resize();
+  }
+
   if (typeof ResizeObserver !== "undefined") {
     // rAF-throttle, не debounce с фиксированной задержкой — та же
     // причина, что и в scene.js (см. подробный комментарий там):
@@ -132,6 +145,7 @@ export function createSoundWave(container) {
     // всё так же быстро, без произвольной задержки.
     let resizeRafPending = false;
     const throttledResize = () => {
+      if (resizeSuspended) return;
       if (resizeRafPending) return;
       resizeRafPending = true;
       requestAnimationFrame(() => {
@@ -291,5 +305,6 @@ export function createSoundWave(container) {
     setBlurPercent,
     setVisible,
     setScale,
+    setResizeSuspended,
   };
 }
