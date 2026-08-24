@@ -971,6 +971,28 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     cursor: grabbing;
   }
 
+  /* Та же самая полоска, но живёт ВНУТРИ самой шторки (см. index.html) —
+     нужна, потому что старый хендл (#playlist-drag-handle, в #player)
+     теперь скрыт ПОД шторкой, когда та открыта (шторка — отдельный слой
+     поверх всего). Стиль почти идентичен старому, просто без отступа
+     снизу (она не последний элемент экрана, над ней ещё содержимое
+     шторки) и с небольшим отступом сверху вместо него. */
+  #playlist-sheet-handle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 14px 0 6px;
+    background: none;
+    border: none;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  #playlist-sheet-handle:active {
+    cursor: grabbing;
+  }
+
   .handle-bar {
     width: 40px;
     height: 4px;
