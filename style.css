@@ -762,7 +762,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
      position:relative — якорь для #avatar-picker, который открывается
      ВВЕРХ за пределы блока; overflow:hidden сломал бы это) — вместо
      него схлопывается #character-stack (сиблинг #avatar-picker
-     внутри), а паддинг самого #dance-controls анимируется отдельно.
+     внутри), а паддинг самого #dance-controls анимируется отдельно. */
 
   #track-info-mobile {
     /* Теперь виден ВСЕГДА, не только после выбора трека — пустое место
