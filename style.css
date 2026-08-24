@@ -1,327 +1,1452 @@
-/**
- * Sound Wave — крупный цветной столбчатый эквалайзер на фоне, за
- * персонажами. Тот же принцип разделения слоёв, что и у остальных
- * аудио-модулей: ничего не знает про Three.js, только 2D canvas + числа
- * от AudioAnalyzer.
- *
- * Слой рисуется тем же способом, что и было у кольца: отдельный
- * `<canvas>`, лежит под WebGL-канвасом (см. z-index/alpha/clearAlpha в
- * scene.js — сцена специально сделана прозрачной ради этого слоя).
- *
- * Параметры ниже — ДЕФОЛТЫ. Большинство доступны как изменяемые "на
- * лету" через возвращаемые set*-функции (см. низ файла) — временная
- * панель управления в main.js дёргает их живьём для подбора вида.
- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  /* Убирает стандартную синюю/серую вспышку-подсветку при тапе на
+     мобильном (Android/Chrome особенно) — у нас все кнопки и так дают
+     собственную визуальную обратную связь (смена фона, active-состояния),
+     эта системная подсветка была лишней и выглядела как баг. */
+  -webkit-tap-highlight-color: transparent;
+}
 
-const DEFAULT_BAR_COUNT = 56;
-const DEFAULT_BAR_GAP_FRACTION = 0.28; // доля ширины полосы, уходящая в промежуток между столбиками
-const DEFAULT_MAX_BAR_HEIGHT_FRACTION = 0.38; // доля высоты канваса — макс. половина столбика (вверх ИЛИ вниз от центра)
-const MIN_BAR_HEIGHT_PX = 4; // столбики не исчезают в ноль даже в полной тишине — маленькая "живая" черта
-const BG_COLOR = "#0d0d0d"; // совпадает с прежним scene.background
-let backgroundVisible = true; // см. setBackgroundVisible ниже — временно, тест видео-фона
-const BAR_SMOOTHING_TAU = 0.09; // секунд — сглаживание каждого столбика отдельно
-const BEAT_PUNCH_DECAY = 0.03; // множитель на секунду — как быстро гаснет всплеск на сильном бите
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #15171c;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
 
-// Пик визуально чаще ближе к центру (не связано с реальной частотой —
-// художественная подсветка поверх уже выровненного компенсацией спектра
-// из audioAnalyzer.js). 0 — нет эффекта, 1 — сильный.
-const CENTER_WEIGHT_STRENGTH = 0.45;
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-// "Рядом с высоким может стоять низкий" — фиксированный (не меняется
-// каждый кадр) псевдослучайный множитель чувствительности НА КАЖДЫЙ
-// столбик отдельно. 0 — нет разброса, 1 — сильный.
-const JAGGEDNESS_STRENGTH = 0.55;
+/* #mobile-top-area обёртка добавлена ради мобильной шторки списка (см.
+   @media ниже), но должна вести себя как прозрачный flex-контекст ВЕЗДЕ,
+   не только на мобильном — иначе #scene-container/#dance-controls/#player
+   внутри неё (у них flex:1 1 auto / flex:0 0 auto) теряют смысл: эти
+   свойства работают только когда прямой родитель сам display:flex.
+   Без этого на десктопе сцена схлопывалась в ноль высоты. */
+#mobile-top-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
 
-// Цветовой градиент слева направо: красный→оранжевый→жёлтый→розовый/
-// маджента→фиолетовый→синий→голубой. Единый fillStyle на весь набор
-// столбиков разом, не поштучно.
-const GRADIENT_STOPS = [
-  [0.0, "#ff3b3b"],
-  [0.16, "#ff9d3b"],
-  [0.3, "#ffd23b"],
-  [0.46, "#ff3b8f"],
-  [0.62, "#b83bff"],
-  [0.8, "#3b6bff"],
-  [1.0, "#3bdfff"],
-];
+#scene-container {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  /* Свой фон — иначе в режиме "волна выключена" (canvas получает
+     display:none и перестаёт что-либо закрашивать) сквозь пустой
+     #scene-container/#app просвечивал бы фон body (#15171c, светлее и
+     с синим оттенком) вместо того же #0d0d0d, что рисует волна в
+     остальных режимах — разные цвета в разных режимах смотрелись как
+     будто фон "мигает" между режимами. */
+  background: #0d0d0d;
+  /* Явно создаёт свой stacking context — чтобы z-index у дочерних
+     канвасов (WebGL-рендерер и Sound Circle Wave, см. soundCircleWave.js
+     и scene.js) сравнивались только друг с другом, не утекая наружу к
+     остальной странице. */
+  isolation: isolate;
+  /* Обрезает всё, что визуально выходит за границы контейнера — нужно
+     для масштабированной (transform:scale) звуковой волны в режиме
+     blur (см. soundWave.js setScale): CSS-трансформации не двигают
+     layout, только отрисовку, так что увеличенный canvas без этого
+     "вылезал" за пределы сцены и перекрывал панель плеера снизу. */
+  overflow: hidden;
+}
 
-export function createSoundWave(container) {
-  const canvas = document.createElement("canvas");
-  canvas.style.position = "absolute";
-  canvas.style.inset = "0";
-  canvas.style.width = "100%";
-  canvas.style.height = "100%";
-  canvas.style.zIndex = "0"; // ниже WebGL-канваса (z-index:1, см. scene.js)
-  canvas.style.pointerEvents = "none";
-  container.insertBefore(canvas, container.firstChild);
+#scene-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 
-  const ctx = canvas.getContext("2d");
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+/* --- Экран загрузки персонажа: спиннер + полоска прогресса вместо
+   старой синей placeholder-капсулы, которая "замерзала" в T-позе. --- */
+#scene-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #16181e;
+  z-index: 5;
+  transition: opacity 300ms ease;
+}
 
-  let width = 0;
-  let height = 0;
-  let gradient = null;
+#scene-loading.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
 
-  // --- Изменяемые "на лету" параметры (см. set*-функции внизу) ---
-  let barCount = DEFAULT_BAR_COUNT;
-  let barGapFraction = DEFAULT_BAR_GAP_FRACTION;
-  let maxBarHeightFraction = DEFAULT_MAX_BAR_HEIGHT_FRACTION;
-  let widthFraction = 1; // доля ширины канваса, которую занимает вся группа столбиков (сжатие/растяжение как единое целое, не через barCount)
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid #2a2e38;
+  border-top-color: #5a7fff;
+  animation: loading-spin 800ms linear infinite;
+}
 
-  let smoothedBars = new Array(barCount).fill(0.04);
-  let barCenterWeight = new Array(barCount);
-  let barJitterGain = new Array(barCount);
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
-  function rebuildPerBarArrays() {
-    // Пересчитывается при смене barCount (и один раз при старте) — оба
-    // массива фиксированы, чтобы "шумность"/центрирование были стабильной
-    // картиной, а не мерцали случайно кадр от кадра.
-    smoothedBars = new Array(barCount).fill(0.04);
-    barCenterWeight = new Array(barCount);
-    barJitterGain = new Array(barCount);
-    for (let i = 0; i < barCount; i++) {
-      const t = barCount > 1 ? (i / (barCount - 1)) * 2 - 1 : 0; // -1..1, 0 = центр
-      const bell = Math.exp(-(t * t) / 0.5); // гауссиана, пик по центру
-      barCenterWeight[i] = 1 - CENTER_WEIGHT_STRENGTH + CENTER_WEIGHT_STRENGTH * bell;
+/* --- Debug overlay (только ?debug=1, не часть финального UI — ТЗ п.15) --- */
+#audio-debug {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #b7e3ff;
+  line-height: 1.5;
+  pointer-events: none;
+}
 
-      const pseudoRandom = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
-      barJitterGain[i] = 1 - JAGGEDNESS_STRENGTH + JAGGEDNESS_STRENGTH * 2 * pseudoRandom;
+#dbg-beat-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #33384a;
+  vertical-align: middle;
+  transition: background 60ms ease-out;
+}
+
+#dbg-beat-dot.active {
+  background: #ff5a7f;
+  box-shadow: 0 0 6px #ff5a7f;
+}
+
+#dbg-beat-dot.strong {
+  background: #ffd15a;
+  box-shadow: 0 0 10px #ffd15a;
+  width: 10px;
+  height: 10px;
+}
+
+/* --- Character stack + dance pool controls --- */
+#dance-controls {
+  position: relative; /* якорь для абсолютно позиционированного #avatar-picker */
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  background: #1b1e25;
+  border-top: 1px solid #262a33;
+}
+
+#character-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.character-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.character-avatar-btn,
+.picker-avatar-btn,
+.picker-duet-btn {
+  flex: 0 0 auto;
+  cursor: pointer;
+  background-color: #262a33;
+  background-repeat: no-repeat;
+  border: 2px solid #33384a;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  /* Запрет нативного меню браузера при долгом нажатии (актуально в
+     основном для текста/emoji-аватарок — у background-image своего
+     контекстного меню и так нет, см. applyAvatarVisual в main.js). */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* Аватарки персонажей — фиксированный круг 36×36 (как и было изначально).
+   Общая для двух разных мест: сама панель танцев (.character-avatar-btn,
+   стек активных персонажей) и попап выбора (.picker-avatar-btn) — при
+   недавнем разделении общего тройного правила забыл добавить сюда же
+   .character-avatar-btn, из-за чего аватарки в стеке остались вообще без
+   размера (только .picker-avatar-btn получил 36×36, круг). */
+.character-avatar-btn,
+.picker-avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  padding: 0;
+}
+
+/* Кнопка "Partners"/галочка подтверждения — отдельно от аватарок: под
+   слово "Partners" нужна авто-ширина, не фиксированный круг (в 36px оно
+   физически не влезает) — "таблетка", не круг. */
+.picker-duet-btn {
+  width: auto;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px; /* половина высоты — даёт форму "таблетки" при любой ширине */
+}
+
+/* Состояние "готово, показываем галочку" — без бокового padding ширина
+   естественно сжимается до min-width (36px), совпадая с высотой (36px)
+   → честный круг, а не "таблетка" 46×36. Тот же боковой padding нужен
+   только пока внутри слово "Partners", не иконка. */
+.picker-duet-btn.is-icon-only {
+  padding: 0;
+  width: 36px;
+}
+
+/* Верхняя (первая) аватарка — кликабельная кнопка, открывает пикер вверх */
+.character-avatar-btn.is-trigger {
+  cursor: pointer;
+}
+.character-avatar-btn.is-trigger[aria-expanded="true"] {
+  border-color: #5a7fff;
+  box-shadow: 0 0 0 1px rgba(90, 127, 255, 0.5);
+}
+
+/* Остальные аватарки в стеке (второй+ персонаж в дуэте) — просто метка,
+   не кликабельны (по спеке — открывает пикер только верхняя) */
+.character-avatar-btn.is-static {
+  cursor: default;
+  pointer-events: none;
+}
+
+.dance-buttons-row {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dance-toggle-btn {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid #33384a;
+  background: transparent;
+  color: #8a8f98;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dance-toggle-btn[aria-pressed="true"] {
+  border-color: #5a7fff;
+  color: #a9bcff;
+  background: rgba(90, 127, 255, 0.12);
+}
+
+/* Танец играет ПРЯМО СЕЙЧАС — фиолетовым, поверх обычной синей "включено".
+   Может совпадать с aria-pressed=true (обычно так и есть). */
+.dance-toggle-btn.now-playing {
+  border-color: #b95af7;
+  color: #ecd3ff;
+  background: rgba(185, 90, 247, 0.18);
+  box-shadow: 0 0 0 1px rgba(185, 90, 247, 0.4);
+}
+
+/* "+" (добавить танец) и "✕" (удалить персонажа) у кастомного персонажа
+   в панели танцев — круглые кнопки-иконки, не "таблетки" как обычные
+   dance-toggle-btn (те под текст названия танца, этим текст не нужен).
+   Тот же принцип, что уже применяли для галочки у кнопки Partners
+   (.picker-duet-btn.is-icon-only) — отдельный круглый вид под иконку. */
+.dance-icon-btn {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  font-size: 16px;
+}
+
+/* "+" (добавить танец) — просили только форму круглой, ЦВЕТА оставить
+   как были изначально (обычные dance-toggle-btn: прозрачный фон, серая
+   обводка) — не наследовать цветовую схему крестика. */
+.dance-icon-btn.is-add {
+  border: 1px solid #33384a;
+  background: transparent;
+  color: #8a8f98;
+}
+
+/* Крестик удаления персонажа — идентично .playlist-item-delete
+   (крестик удаления трека в списке): тот же цвет/фон в покое, та же
+   красная подсветка при нажатии. */
+.dance-icon-btn.is-delete {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #8a8f98;
+}
+
+.dance-icon-btn.is-delete:active {
+  background: rgba(255, 90, 90, 0.25);
+  color: #ff8a8a;
+}
+
+/* "Вооружённое" состояние кнопки удаления (первый клик, ждём второй для
+   подтверждения) — см. makeConfirmableDelete в main.js. Работает
+   одинаково на любой кнопке удаления (и трек, и плейлист, и персонаж) —
+   общий класс, не завязан на конкретный тип кнопки. Лёгкая пульсация —
+   достаточно заметно, чтобы не пропустить, но не резко/раздражающе. */
+/* "Вооружённое" состояние кнопки удаления (первый клик, ждём второй для
+   подтверждения) — см. makeConfirmableDelete в main.js. Работает
+   одинаково на любой кнопке удаления (и трек, и плейлист, и персонаж) —
+   общий класс, не завязан на конкретный тип кнопки. Пульсация ЧЕРЕЗ
+   opacity, не через transform:scale — на мобильном .dance-buttons-row
+   имеет overflow-x:auto, а по спецификации CSS это автоматически даёт
+   overflow-y:auto тоже (если не задан явно) — scale "вылезал" за
+   границы ряда и обрезался сверху/снизу. Opacity никогда не выходит за
+   пределы собственного бокса кнопки, обрезаться нечему в принципе. */
+.confirm-armed {
+  background: rgba(255, 90, 90, 0.35) !important;
+  color: #ff8a8a !important;
+  animation: confirm-armed-pulse 1s ease-in-out infinite;
+}
+
+@keyframes confirm-armed-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Всплывающее меню выбора персонажа(ей) — открывается ВВЕРХ от верхней
+   аватарки, может выходить за пределы панели и накладываться на сцену. */
+#avatar-picker {
+  position: absolute;
+  left: 16px;
+  bottom: 100%;
+  margin-bottom: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: #20242d;
+  border: 1px solid #33384a;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ВАЖНО: без этого правила popup не скрывался при avatarPickerEl.hidden=true —
+   у ID-селектора #avatar-picker выше специфичность, чем у стандартного
+   браузерного [hidden] { display: none }, поэтому наш явный display:flex
+   выше побеждал атрибут hidden. #avatar-picker[hidden] специфичнее обоих. */
+#avatar-picker[hidden] {
+  display: none;
+}
+
+/* В режиме множественного выбора — подсветка выбранных персонажей */
+.picker-avatar-btn[aria-pressed="true"] {
+  border-color: #5a7fff;
+  box-shadow: 0 0 0 1px rgba(90, 127, 255, 0.5);
+}
+
+.picker-duet-btn {
+  font-size: 16px;
+  color: #d5d8dd; /* раньше не нужно было — эмодзи цветной сам по себе, слово "Partners" нужно явно подсветить */
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.picker-duet-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Готова к подтверждению (2+ выбрано) — подсвечена, показывает галочку */
+.picker-duet-btn[aria-pressed="true"] {
+  border-color: #b95af7;
+  background: rgba(185, 90, 247, 0.18);
+  box-shadow: 0 0 0 1px rgba(185, 90, 247, 0.4);
+  opacity: 1;
+}
+
+/* --- Player panel --- */
+
+#player {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  background: linear-gradient(180deg, #1c1f27 0%, #16181e 100%);
+  border-top: 1px solid #262a33;
+}
+
+#player-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(90, 127, 255, 0.35);
+  transition: transform 100ms ease, box-shadow 100ms ease;
+}
+
+.icon-btn:hover:not(:disabled) {
+  transform: scale(1.04);
+  box-shadow: 0 4px 14px rgba(90, 127, 255, 0.45);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.icon-btn:disabled {
+  background: #33384a;
+  box-shadow: none;
+  cursor: default;
+}
+
+.icon-btn svg {
+  margin-left: 2px; /* оптически центрируем play-треугольник */
+}
+
+.time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #8a8f98;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+}
+
+/* Скрыто по умолчанию (десктоп) — раскрывается только внутри
+   @media (max-width: 480px) ниже. Общий класс для всего, что нужно
+   ТОЛЬКО на мобильном: кнопки плейлиста, вынесенное название трека. */
+.mobile-only-control {
+  display: none;
+}
+
+.transport-icon-btn {
+  flex: 0 0 auto;
+  width: 36px; /* было 32px — слегка крупнее */
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #8a8f98;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  /* display специально НЕ здесь (без @media) — эти кнопки имеют ещё и
+     класс .mobile-only-control (display:none по умолчанию, см. выше).
+     Если задать display:flex прямо тут, он побеждает .mobile-only-control
+     на десктопе тоже (одинаковая специфичность класса, эта запись в
+     файле идёт позже — кнопки были видны на десктопе, хотя не должны
+     были). display:flex теперь только внутри @media, на каждую кнопку
+     отдельно, вместе с display:none по умолчанию отовсюду. */
+}
+
+.transport-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.transport-icon-btn[aria-pressed="true"] {
+  color: #5a7fff; /* активный shuffle/repeat — подсвечен акцентным цветом */
+}
+
+#time-duration {
+  text-align: right;
+}
+
+#progress-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+#waveform-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none; /* включается JS при переключении в waveform-режим */
+  pointer-events: none; /* клики всё равно обрабатывает #progress поверх */
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  outline: none;
+  /* Современная градиентная заливка "до текущей позиции" — --progress
+     выставляется в main.js на каждый timeupdate/input. */
+  background: linear-gradient(
+    to right,
+    #5a7fff 0%,
+    #7d9bff var(--progress, 0%),
+    #2a2e38 var(--progress, 0%),
+    #2a2e38 100%
+  );
+  transition: opacity 120ms ease;
+}
+
+/* В waveform-режиме сам input становится прозрачным треком поверх canvas —
+   нужен только для перетаскивания (drag), рисует волну canvas под ним.
+   Точка-ползунок тоже прячется — волна сама показывает прогресс заливкой. */
+#progress.progress-transparent {
+  background: transparent;
+}
+
+#progress.progress-transparent::-webkit-slider-thumb {
+  opacity: 0;
+}
+
+#progress.progress-transparent::-moz-range-thumb {
+  opacity: 0;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  margin-top: 0;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.5;
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  background: #55596a;
+  box-shadow: none;
+}
+
+#player-secondary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+#volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8a8f98;
+  flex: 0 0 auto;
+}
+
+#volume-wrap input[type="range"] {
+  width: 70px;
+  flex: 0 0 auto;
+  height: 4px;
+}
+
+#choose-audio-btn {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  font-size: 13px;
+  border-radius: 999px;
+  border: 1px solid #33384a;
+  background: transparent;
+  color: #e4e6eb;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+#choose-audio-btn:hover {
+  background: #262a33;
+  border-color: #444a5c;
+}
+
+.text-toggle-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid #33384a;
+  background: transparent;
+  color: #8a8f98;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.text-toggle-btn[aria-pressed="true"] {
+  border-color: #5a7fff;
+  color: #a9bcff;
+  background: rgba(90, 127, 255, 0.12);
+}
+
+#track-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: #8a8f98;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* --- Mobile --- */
+@media (max-width: 480px) {
+  #player {
+    padding: 10px 20px 12px; /* было 12px слева/справа — теперь 20px, верх/низ не трогаем */
+    gap: 8px;
+  }
+
+  #dance-controls {
+    /* Приклеивает связку "панель танцев + панель плеера" (идут в потоке
+       друг за другом без разрыва) к НИЗУ колонки — margin-top:auto
+       забирает ВСЁ свободное место перед этим блоком, а не перед
+       плеером отдельно, поэтому танцы и плеер остаются слитными, без
+       зазора между ними, и вместе прижимаются к низу экрана —
+       независимо от того, сколько места занял контент выше (сцена/
+       название трека). */
+    margin-top: auto;
+    padding-left: 20px; /* было 16px (базовое десктопное правило) — только слева/справа, верх/низ (10px) не трогаем */
+    padding-right: 20px;
+  }
+
+  #track-name {
+    display: none; /* на узком экране название трека переехало в карточку #track-info-mobile, см. ниже */
+  }
+
+  /* #app теперь строго 100vh flex-колонка из двух частей: "верхняя
+     карточка" (сцена+название+персонажи+плеер) и шторка списка снизу —
+     обе управляются через flex-basis в % (JS двигает это же значение во
+     время перетаскивания хендла, см. main.js setSheetFraction). */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh; /* фолбэк для старых браузеров */
+    /* 100vh на мобильном (особенно Android/Chrome) часто считается с
+       учётом СКРЫТОЙ адресной строки — то есть больше, чем реально
+       видимая область в данный конкретный момент. Контент высотой ровно
+       100vh мог залезать под адресную строку/системную навигацию
+       физически, а не просто "не помещаться" — то самое "хендл спрятался
+       под навигацией". 100dvh ("dynamic viewport height") — современная
+       замена, которая честно считает РЕАЛЬНО видимую область прямо
+       сейчас, учитывая появление/скрытие браузерных панелей. */
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  #mobile-top-area {
+    display: flex;
+    flex-direction: column;
+    flex-basis: 100%;
+    min-height: 0;
+    /* Было overflow:hidden — при реальном названии/исполнителе (не
+       пустой строке) суммарная высота содержимого иногда превышала
+       100vh (особенно на телефонах с большой панелью браузера снизу,
+       как у Samsung), и то, что не влезло (хендл в самом низу),
+       обрезалось безвозвратно — прокрутить было нельзя. overflow-y:auto
+       — надёжная страховка: если не влезает, можно докрутить, хендл
+       больше никогда не теряется полностью. */
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Сцена — квадрат со скруглёнными углами (как альбомный арт на
+     референсе). ВАЖНО: не height:100% (проценты по высоте в глубоко
+     вложенных flex-колонках — шаткое место CSS: родитель должен иметь
+     "определённую" высоту, а высота, заданная через flex-basis у самого
+     #mobile-top-area, не всегда считается таковой для процентов у ЕГО
+     детей — на практике это ломалось при открытии шторки: сцена
+     схлопывалась в ноль, хотя соседи типа названия/панели персонажей
+     отображались нормально, у них проблемы не было, потому что они не
+     завязаны на height:100%). Вместо этого — обычный flex-grow: сцена
+     сама забирает всё, что осталось после соседей по колонке, без
+     зависимости от процентных вычислений вообще. */
+  #scene-container {
+    /* flex:0 1 auto (НЕ 1 1 0, как было) — не растягивается принудительно
+       на всё доступное место, только занимает свой "естественный" размер
+       (квадрат, ширина=высота через aspect-ratio), но МОЖЕТ сжиматься по
+       высоте (flex-shrink:1), если снизу поджимают остальные элементы —
+       именно так и просили: "по высоте максимум квадратным, но сужается,
+       если поджимают нижние объекты" (не наоборот — раньше сцена сама
+       забирала всё место, вплоть до того, что могла поджимать соседей). */
+    flex: 0 1 auto;
+    min-height: 60px; /* страховка — никогда не должна схлопываться буквально в 0 (падал drawImage, см. main.js) */
+    aspect-ratio: 1 / 1;
+    /* Ширина ФИКСИРОВАННАЯ (не auto через aspect-ratio, как было) —
+       20px слева/справа/сверху, снизу 0 (своего отступа хватает у
+       блока названия трека сразу под сценой). Высота стремится
+       сравняться с шириной (квадрат) через aspect-ratio, но при
+       нехватке места сжимается ТОЛЬКО высота (flex-shrink работает по
+       главной оси колонки — высоте), ширина остаётся неизменной —
+       поэтому "сужается по высоте", а не превращается в узкий столбик. */
+    width: calc(100% - 40px);
+    margin: 20px auto 0;
+    border-radius: 22px;
+    /* НАСТОЯЩАЯ причина "квадрат не получался, аспект был 0.74, ширина
+       во всю ширину экрана" (диагностика подтвердила цифрами): дефолтное
+       align-items:stretch у #mobile-top-area (flex-колонка) растягивало
+       сцену на всю ширину ДО того, как aspect-ratio успевал подставить
+       ширину от уже посчитанной flex-grow высоты — margin:auto тогда
+       центрировать было уже нечего, блок и так был на всю ширину.
+       align-self:center здесь — точечно, только для сцены, отменяет
+       именно это растяжение по поперечной оси, не трогая остальные
+       элементы колонки (название/панель персонажей/плеер), которым
+       растяжение на всю ширину как раз нужно и сохраняется как было. */
+    align-self: center;
+  }
+
+  /* История для контекста: раньше здесь была логика плавного схлопывания
+     панели танцев/названия (opacity+max-height) синхронно с открытием
+     шторки — шторка делила flex-basis с этим блоком, поджимая сцену.
+     Теперь шторка — отдельный слой поверх всего (position:fixed, см.
+     #playlist-sheet), ничего здесь не сжимает и не схлопывает — просто
+     визуально перекрывает при открытии. Ничего специально готовить под
+     это в этом месте больше не нужно. */
+
+  #track-info-mobile {
+    /* Теперь виден ВСЕГДА, не только после выбора трека — пустое место
+       занимают плейсхолдеры "Track"/"Author" (см. main.js), пока
+       реального трека/имени ещё нет. */
+    display: flex;
+    /* Раньше был flex-grow:1 с max-height-потолком, чтобы "гулять" и
+       забирать свободное место — больше не нужно: свободное место
+       теперь съедает margin-top:auto у #player (см. выше), панель
+       плеера сама прижимается к низу. Этому блоку остаётся просто
+       естественный размер под текст, без всякого роста. */
+    flex: 0 0 auto;
+    flex-direction: column;
+    justify-content: center;
+    padding: 10px 20px;
+    text-align: center;
+  }
+
+  #track-title-mobile {
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  #track-artist-mobile {
+    margin-top: 2px;
+    font-size: 13px;
+    color: #8a8f98;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  /* Транспорт — три строки вместо одной, как на референсе (прогресс-бар
+     сверху, времена под ним, кнопки плейлиста снизу с большой play/pause
+     по центру). Никакой перестройки DOM — те же самые элементы, что и на
+     десктопе, просто flex-wrap+order раскладывают их по-другому. На
+     десктопе flex-wrap не выставлен (остаётся nowrap по умолчанию) —
+     этот блок его не трогает, там всё как было, одна строка. */
+  #player-transport {
+    flex-wrap: wrap;
+    /* row-gap теперь 0 (было 6px) — gap у flex-контейнера НЕ зависит от
+       margin на элементах и держит минимальное расстояние сам по себе,
+       поэтому margin-top на #transport-row-break ниже не действовал
+       вообще, ни на -10px, ни на -40px. Вместо gap по вертикали —
+       margin-top вручную на первом элементе каждой новой строки, тогда
+       расстояние перед КАЖДОЙ строкой можно задавать отдельно. */
+    gap: 0 10px;
+  }
+
+  /* Ряд 1 — прогресс-бар на всю ширину (flex-basis:100% форсирует
+     перенос всего, что идёт следом, на новую строку). */
+  #progress-wrap {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  /* Ряд 2 — текущее время слева, длительность справа (margin-left:auto
+     раздвигает их по краям одной строки). margin-top — отступ ПЕРЕД
+     этой строкой (раньше был row-gap, теперь вручную). */
+  #time-current {
+    order: 2;
+    margin-top: 6px;
+  }
+  #time-duration {
+    order: 3;
+    margin-left: auto;
+  }
+
+  /* Ряд 3 — кнопки плейлиста: shuffle, prev, play/pause (крупная, по
+     центру), next, repeat. #transport-row-break форсирует перенос всей
+     этой группы на новую строку (порядок 4, higher чем времена),
+     justify-content:center на самом transport центрирует их — работает
+     одинаково и на прогресс-баре (там неважно, flex-basis:100% и так
+     на всю ширину), и на времени (margin-left:auto у time-duration
+     перебивает justify-content именно для себя, стандартное поведение
+     flex — раздвигает по краям, а не собирает в центр). */
+  #player-transport {
+    justify-content: center;
+  }
+  #transport-row-break {
+    display: block;
+    order: 4;
+    flex-basis: 100%;
+    height: 0;
+    margin-top: -10px; /* приподнимает ряд кнопок ближе к времени/длительности трека */
+  }
+  #shuffle-btn {
+    display: flex;
+    order: 5;
+  }
+  #prev-track-btn {
+    display: flex;
+    order: 6;
+  }
+  #play-btn {
+    order: 7;
+    width: 58px; /* было 52px — слегка крупнее */
+    height: 58px;
+  }
+  #next-track-btn {
+    display: flex;
+    order: 8;
+  }
+  #repeat-btn {
+    display: flex;
+    order: 9;
+  }
+
+  /* Громкость на телефоне регулируется боковыми кнопками устройства —
+     свой ползунок на экране только дублирует и занимает место. */
+  #volume-wrap {
+    display: none;
+  }
+
+  /* "+Add" в шторке списка треков теперь делает то же самое — отдельная
+     кнопка на самой панели плеера больше не нужна на мобильном. */
+  #choose-audio-btn {
+    display: none;
+  }
+
+  /* Переключатель вида прогресс-бара — не нужен на мобильном (мало
+     пользы на маленьком экране, лишняя кнопка). После этого в
+     #player-secondary не остаётся ничего видимого вообще (volume/
+     choose-audio/track-name уже скрыты выше по файлу) — прячем всю
+     строку целиком, а не оставляем пустой ряд с отступами.
+  */
+  #waveform-toggle {
+    display: none;
+  }
+  #player-secondary {
+    display: none;
+  }
+
+  /* Кнопки танцев — "барабан", не обычная полоса прокрутки: один ряд
+     без переноса, скролл со сцеплением (snap, как щелчки на барабане
+     часов), скрытый скроллбар (чище выглядит), градиентное затухание у
+     правого края — намёк, что там ещё есть кнопки, а не резкий обрез.
+     На десктопе — то же самое поведение, что и раньше (flex-wrap:wrap),
+     этот блок его не трогает, действует только в этом @media. */
+  .dance-buttons-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* старый Edge/IE */
+    mask-image: linear-gradient(to right, black 88%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  }
+
+  .dance-buttons-row::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/новый Edge */
+  }
+
+  .dance-toggle-btn {
+    scroll-snap-align: start;
+  }
+
+  /* Камера (🎥) и режим волны — скрыты по умолчанию, появляются по
+     касанию области сцены (или клику мышью), сами прячутся через 3с;
+     если пользователь коснулся именно кнопки — держится 5с от
+     последнего касания. Логика таймеров — в main.js, здесь только
+     сама CSS-анимация прозрачности. */
+  .mobile-fade-btn {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .mobile-fade-btn.mobile-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mobile-fade-btn.mobile-visible:disabled {
+    /* Специфичность строго ПОВЕРХ .mobile-visible (тот же селектор +
+       :disabled) — не поверх БАЗОВОГО скрытого состояния. Раньше было
+       просто .mobile-fade-btn:disabled — специфичность (класс+псевдокласс)
+       оказалась ВЫШЕ базового .mobile-fade-btn{opacity:0}, да ещё с
+       !important — кнопка показывалась в состоянии disabled ДАЖЕ если по
+       сцене вообще не кликали (в обход всего механизма показа по тапу). */
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  /* Полоска-хендл для свайпа списка треков (см. main.js — pointerdown/
+     move/up на этой кнопке крутит flex-basis у #mobile-top-area и
+     #playlist-sheet). Сама кнопка на всю ширину, лёгкая, без фона —
+     видна только сама полоска внутри неё. */
+  #playlist-drag-handle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    /* Хендл теперь последний видимый элемент внизу экрана (player-
+       secondary скрыт целиком выше) — нормальный отступ снизу + запас
+       под системную зону (home indicator на "чёлочных" телефонах),
+       иначе свайпать от самого края экрана неудобно. */
+    padding: 10px 0 calc(16px + env(safe-area-inset-bottom, 0px));
+    background: none;
+    border: none;
+    cursor: grab;
+    touch-action: none; /* без этого браузер сам скроллит страницу вместо нашего drag */
+  }
+
+  #playlist-drag-handle:active {
+    cursor: grabbing;
+  }
+
+  /* Та же самая полоска, но живёт ВНУТРИ самой шторки (см. index.html) —
+     нужна, потому что старый хендл (#playlist-drag-handle, в #player)
+     теперь скрыт ПОД шторкой, когда та открыта (шторка — отдельный слой
+     поверх всего). Стиль почти идентичен старому, просто без отступа
+     снизу (она не последний элемент экрана, над ней ещё содержимое
+     шторки) и с небольшим отступом сверху вместо него. */
+  #playlist-sheet-handle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 14px 0 6px;
+    background: none;
+    border: none;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  #playlist-sheet-handle:active {
+    cursor: grabbing;
+  }
+
+  .handle-bar {
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: #4a4f5c;
+  }
+
+  /* Шторка списка треков — flex-basis:0 по умолчанию (закрыта), JS
+     двигает его же во время перетаскивания и при открытии/закрытии
+     (см. setSheetFraction/openPlaylistSheet/closePlaylistSheet). */
+  #playlist-sheet {
+    /* ВАРИАНТ 3 (по договорённости): шторка теперь ОТДЕЛЬНЫЙ СЛОЙ поверх
+       всего остального (position:fixed), не часть общей flex-колонки —
+       больше не делит место через flex-basis с #mobile-top-area. Едет
+       через transform:translateY (см. main.js setSheetFraction), не
+       через изменение размера. Раньше сцена/панели ПОДЖИМАЛИСЬ каждый
+       раз, когда шторка росла — потому что оба делили один и тот же
+       flex-basis "пирог". Теперь шторка просто наезжает СВЕРХУ, ничего
+       под собой не сжимая — сама сцена/персонаж пока не адаптируются
+       под это (следующий отдельный шаг), сейчас только сама шторка.
+    */
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 60vh; /* та же итоговая высота, что раньше давал flex-basis:60% при fraction=1 */
+    transform: translateY(100%); /* закрыто по умолчанию — полностью за пределами экрана снизу */
+    z-index: 50000; /* поверх обычного контента, но ниже попапов (Playlists/Settings — те 100000) */
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    /* Полупрозрачный фон + размытие фона (эффект "матового стекла") —
+       вместо непрозрачной заливки. Идея: если персонаж хоть немного
+       виден СКВОЗЬ шторку, наезжание перестаёт выглядеть как обрезание
+       и читается как осознанный, гармоничный слой поверх — тогда,
+       возможно, ресайзить/прятать сцену вообще не понадобится.
+       backdrop-filter размывает то, что находится ПОД элементом (не
+       содержимое самого элемента) — именно то, что нужно здесь.
+       -webkit- версия обязательна для Safari/iOS, без префикса там не
+       сработает вообще. */
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4); /* лёгкая тень — иначе слой поверх контента визуально сливался бы с краем */
+    /* ВАЖНО: паддинг НЕ здесь, а на #playlist-add-btn/.playlist-item
+       ниже — паддинг контейнера не сжимается вместе с flex-basis:0% (не
+       бывает "отрицательным"), поэтому кусочек кнопки всё равно торчал
+       наружу даже при закрытой шторке. */
+  }
+
+  #playlist-sheet-buttons-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 20px 10px;
+  }
+
+  #playlist-add-btn {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* "Плейлисты" — второстепенная кнопка рядом с +Add, менее яркая
+     (обводка, не заливка) — показывает имя активного плейлиста, не
+     общее слово "Плейлисты" (см. updatePlaylistsButtonLabel в main.js). */
+  #playlists-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1.5px solid #4a4f5c;
+    background: transparent;
+    color: #d5d8dd;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* --- Попап "Плейлисты" --- */
+  /* --- Попап "Плейлисты" --- */
+  /* :not([hidden]) — иначе display:flex (ID-селектор) имеет более
+     высокую специфичность, чем атрибут [hidden] у браузера по
+     умолчанию, и побеждает его — попап был бы виден всегда, даже с
+     hidden в разметке. С этим же классом бага уже сталкивались в этом
+     файле раньше (см. историю с .mobile-fade-btn:disabled). */
+  #playlists-popup-overlay:not([hidden]) {
+    display: flex;
+  }
+
+  #playlists-popup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.55);
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+
+  #playlists-popup {
+    width: 100%;
+    max-width: 480px;
+    max-height: 70vh;
+    background: #1c1f27;
+    border-radius: 20px 20px 0 0;
+    padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  #playlists-popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  #playlists-popup-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: #d5d8dd;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  #playlists-popup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+  }
+
+  /* Строка плейлиста в попапе — теперь не одна <button>, а <div>-
+     контейнер (флекс-строка) с ТРЕМЯ независимыми кнопками внутри: имя
+     (растягивается, переключает на этот плейлист), карандаш
+     (переименовать), крестик (удалить). Та же причина, что и у строки
+     трека в основном списке — вложенные <button> внутри <button>
+     невалидны. */
+  .playlists-popup-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .playlists-popup-item.active {
+    background: rgba(185, 90, 247, 0.18);
+  }
+
+  .playlists-popup-item.active .playlists-popup-item-select {
+    color: #ecd3ff;
+  }
+
+  .playlists-popup-item-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: #d5d8dd;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .playlists-popup-item-edit,
+  .playlists-popup-item-delete {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: #8a8f98;
+    cursor: pointer;
+  }
+
+  .playlists-popup-item-delete:active {
+    background: rgba(255, 90, 90, 0.25);
+    color: #ff8a8a;
+  }
+
+  .playlists-popup-item-edit:active {
+    background: rgba(185, 90, 247, 0.25);
+    color: #ecd3ff;
+  }
+
+  #playlists-popup-create-btn {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  #playlists-popup-name-row:not([hidden]) {
+    display: flex;
+  }
+
+  #playlists-popup-name-row {
+    gap: 8px;
+  }
+
+  #playlists-popup-name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1.5px solid #4a4f5c;
+    outline: none; /* без этого браузер добавляет свой системный focus-контур (жёлто-белый на Android) ПОВЕРХ этой рамки — вместе давало вид "двойной" рамки */
+    background: #14161b;
+    color: #fff;
+    font-size: 14px;
+  }
+
+  #playlists-popup-name-confirm {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(160deg, #6d8dff 0%, #5a7fff 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Строка трека — теперь не одна <button>, а <div>-контейнер (флекс-
+     строка) с двумя независимыми кнопками внутри: слева "проиграть"
+     (название+исполнитель, растягивается на всё доступное место),
+     справа — крестик удаления. Раскладка отступов ровно как просили:
+     20px слева — контент — 10px — крестик — 20px справа. */
+  .playlist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 20px;
+    border-radius: 10px;
+  }
+
+  .playlist-item-info {
+    flex: 1 1 auto;
+    min-width: 0; /* даёт ellipsis у названия/исполнителя работать внутри флекс-строки */
+    text-align: left;
+    border: none;
+    background: none;
+    color: #d5d8dd;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .playlist-item-delete {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.08);
+    color: #8a8f98;
+    cursor: pointer;
+  }
+
+  .playlist-item-delete:active {
+    background: rgba(255,90,90,0.25);
+    color: #ff8a8a;
+  }
+
+  #playlist-items {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Раньше подсветка "сейчас играет" была через фон строки (фиолетовый
+     оттенок) — заменили на мини-эквалайзер (см. .playlist-item-eq ниже),
+     фон/цвет текста больше не меняются у активного трека. */
+  .playlist-item-eq {
+    display: none; /* показывается только у активного трека, см. .now-playing ниже */
+    flex: 0 0 auto;
+    align-items: flex-end;
+    gap: 2px;
+    width: 16px;
+    height: 14px;
+  }
+
+  .playlist-item.now-playing .playlist-item-eq {
+    display: flex;
+  }
+
+  .playlist-item-eq span {
+    width: 3px;
+    background: #b95af7;
+    border-radius: 1px;
+    transform-origin: bottom; /* растут снизу вверх, не от центра — иначе "плавают", а не стоят на одной линии */
+    animation: playlist-eq-bounce 0.9s ease-in-out infinite;
+  }
+
+  /* На паузе — серый, не цветной (анимация покачивания продолжается,
+     меняется только цвет — сам факт "это текущий трек" остаётся видно,
+     а не пропадает совсем). */
+  .playlist-item.is-paused .playlist-item-eq span {
+    background: #8a8f98;
+  }
+
+  .playlist-item-eq span:nth-child(1) {
+    height: 40%;
+    animation-delay: 0s;
+  }
+  .playlist-item-eq span:nth-child(2) {
+    height: 100%;
+    animation-delay: 0.2s;
+  }
+  .playlist-item-eq span:nth-child(3) {
+    height: 65%;
+    animation-delay: 0.4s;
+  }
+
+  @keyframes playlist-eq-bounce {
+    0%, 100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
     }
   }
-  rebuildPerBarArrays();
 
-  function buildGradient(fromX, toX) {
-    gradient = ctx.createLinearGradient(fromX, 0, toX, 0);
-    for (const [pos, color] of GRADIENT_STOPS) {
-      gradient.addColorStop(pos, color);
-    }
+  .playlist-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
   }
 
-  let blurPercent = 0; // % от ширины canvas — не фиксированные px (те не масштабируются под размер экрана, см. диагностику "почти не видно на мобильном")
-  let isMobileWave = false; // обновляется в resize() — тот же порог 480px, что и везде в проекте
-
-  function applyBlurFilter() {
-    const px = (width * blurPercent) / 100;
-    canvas.style.filter = px > 0.05 ? `blur(${px}px)` : "none";
+  .playlist-item-artist {
+    margin-top: 1px;
+    font-size: 12px;
+    color: #8a8f98;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
   }
+}
 
-  function resize() {
-    width = container.clientWidth;
-    height = container.clientHeight;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    applyBlurFilter(); // пересчитать px под новую ширину при смене размера окна
-    isMobileWave = window.matchMedia("(max-width: 480px)").matches;
-  }
-  resize();
-  window.addEventListener("resize", resize);
-  // См. подробный комментарий в scene.js про ResizeObserver — тот же
-  // класс бага здесь тоже возможен (внутренний буфер canvas рассинхронится
-  // с реальным размером контейнера при изменениях разметки, не только
-  // при ресайзе окна), просто менее заметный — не "призрак" персонажа, а
-  // лёгкая смазанность/неверный масштаб полос.
-  // resizeSuspended — см. подробный комментарий в scene.js: то же самое
-  // для волны — при медленном непрерывном перетаскивании хендла шторки
-  // canvas.width = ... (внутри resize()) мгновенно очищает содержимое
-  // канваса на каждом кадре, всё время перетаскивания — заметное
-  // мигание. Пока suspended=true — просто не трогаем канвас вообще;
-  // один точный resize() — сразу по окончании (см. setResizeSuspended,
-  // main.js на pointerup хендла).
-  let resizeSuspended = false;
-  function setResizeSuspended(suspended) {
-    resizeSuspended = suspended;
-    if (!suspended) resize();
-  }
+/* --- Попап "Settings" — ВНЕ мобильного @media: кнопка-шестерёнка
+   видна на обеих платформах (mobile-fade-btn, не mobile-only-control,
+   как у плейлистов) — раньше весь этот блок был ошибочно засунут ТОЛЬКО
+   внутрь мобильного @media, из-за чего на десктопе попап показывался
+   вообще без стилей (голый текст внизу страницы). --- */
+/* --- Попап "Settings" --- */
+/* :not([hidden]) — та же причина, что и у попапа плейлистов выше
+   (специфичность ID-селектора иначе побеждала бы [hidden]). */
+#settings-popup-overlay:not([hidden]) {
+  display: flex;
+}
 
-  if (typeof ResizeObserver !== "undefined") {
-    // rAF-throttle, не debounce с фиксированной задержкой — та же
-    // причина, что и в scene.js (см. подробный комментарий там):
-    // фиксированная задержка (было 80мс) заметна там, где нет частой
-    // стрельбы событий (например, мгновенный прыжок размера от кнопки
-    // масштаба сцены) — добавляла искусственную задержку туда, где её
-    // не должно быть. requestAnimationFrame схлопывает частые
-    // срабатывания (плавная CSS-анимация шторки) до одного вызова на
-    // кадр (~16мс, незаметно), а одиночный мгновенный ресайз обновляется
-    // всё так же быстро, без произвольной задержки.
-    let resizeRafPending = false;
-    const throttledResize = () => {
-      if (resizeSuspended) return;
-      if (resizeRafPending) return;
-      resizeRafPending = true;
-      requestAnimationFrame(() => {
-        resizeRafPending = false;
-        resize();
-      });
-    };
-    new ResizeObserver(throttledResize).observe(container);
-  }
+#settings-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.55);
+  align-items: center; /* по центру экрана, не снизу — в отличие от попапа плейлистов */
+  justify-content: center;
+}
 
-  let time = 0;
-  let beatPunch = 0;
+#settings-popup {
+  width: calc(100% - 40px);
+  max-width: 420px;
+  /* "Чуть выше середины" — сдвигаем вверх от чистого центра. */
+  transform: translateY(-8vh);
+  background: #1c1f27;
+  border-radius: 20px;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-  /**
-   * @param {number} delta - секунды с прошлого кадра
-   * @param {number[]|null} spectrumBars - barCount значений 0..1 (см.
-   *   audioAnalyzer.getSpectrumBars(soundWave.getBarCount())), null если
-   *   музыка не играет — тогда лёгкая "холостая" синусоидальная волна.
-   * @param {boolean} strongBeat
-   */
-  function update(delta, spectrumBars, strongBeat) {
-    time += delta;
-    if (strongBeat) beatPunch = 1;
-    beatPunch *= Math.pow(BEAT_PUNCH_DECAY, delta);
+#settings-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
 
-    const smoothing = 1 - Math.exp(-delta / BAR_SMOOTHING_TAU);
-    for (let i = 0; i < barCount; i++) {
-      let target;
-      if (spectrumBars) {
-        target = spectrumBars[i] * barJitterGain[i];
-      } else if (isMobileWave) {
-        // На мобильном "холостое дыхание" было слишком незаметным (то же
-        // самое значение, что и на десктопе, при этом столбики там и так
-        // тоньше/меньше — визуально терялось). Диапазон заметно шире.
-        target = 0.09 + 0.09 * (0.5 + 0.5 * Math.sin(time * 0.6 + i * 0.35));
-      } else {
-        target = 0.05 + 0.04 * (0.5 + 0.5 * Math.sin(time * 0.6 + i * 0.35));
-      }
-      target *= barCenterWeight[i];
-      target = Math.min(1.4, target);
-      smoothedBars[i] += (target - smoothedBars[i]) * smoothing;
-    }
+#settings-popup-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d5d8dd;
+  font-size: 16px;
+  cursor: pointer;
+}
 
-    draw();
-  }
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
 
-  function draw() {
-    // backgroundVisible — ВРЕМЕННО (тест видео-фона, см. main.js): пока
-    // включён видео-фон, НЕ заливаем канвас непрозрачным BG_COLOR —
-    // иначе видео позади волны (z-index:-1) было бы физически не видно,
-    // полностью закрыто этой заливкой на каждом кадре. Обычное поведение
-    // (без видео-фона) не меняется — заливка остаётся.
-    if (backgroundVisible) {
-      ctx.fillStyle = BG_COLOR;
-      ctx.fillRect(0, 0, width, height);
-    } else {
-      ctx.clearRect(0, 0, width, height);
-    }
+.settings-row-label {
+  color: #d5d8dd;
+  font-size: 14px;
+}
 
-    const cy = height / 2;
-    // Вся группа столбиков сжимается/растягивается как единое целое в
-    // пределах drawWidth (centered) — НЕ через изменение barCount, ровно
-    // как просили: "сжимать все сразу", а не убирать столбики.
-    const drawWidth = width * widthFraction;
-    const drawOffsetX = (width - drawWidth) / 2;
-    const barSlot = drawWidth / barCount;
-    const barWidth = barSlot * (1 - barGapFraction);
-    const maxHalfHeight = height * maxBarHeightFraction;
-
-    buildGradient(drawOffsetX, drawOffsetX + drawWidth);
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = "rgba(255, 255, 255, 0.35)";
-    ctx.shadowBlur = 10;
-
-    for (let i = 0; i < barCount; i++) {
-      const value = smoothedBars[i] * (1 + beatPunch * 0.5);
-      const halfHeight = Math.max(MIN_BAR_HEIGHT_PX, value * maxHalfHeight);
-      const x = drawOffsetX + i * barSlot + (barSlot - barWidth) / 2;
-      const radius = Math.min(barWidth / 2, 6);
-
-      roundRect(ctx, x, cy - halfHeight, barWidth, halfHeight * 2, radius);
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
-
-  function roundRect(c, x, y, w, h, r) {
-    c.beginPath();
-    c.moveTo(x + r, y);
-    c.arcTo(x + w, y, x + w, y + h, r);
-    c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r);
-    c.arcTo(x, y, x + w, y, r);
-    c.closePath();
-  }
-
-  // --- Публичные сеттеры для временной панели управления ---
-
-  function getBarCount() {
-    return barCount;
-  }
-
-  function setBarCount(n) {
-    barCount = Math.max(4, Math.round(n));
-    rebuildPerBarArrays();
-  }
-
-  /** 0 (столбики впритык, почти без зазора) .. 0.9 (тонкие ниточки) */
-  function setBarGapFraction(v) {
-    barGapFraction = Math.min(0.9, Math.max(0, v));
-  }
-
-  /** Доля высоты канваса — насколько высоко может "взлететь" столбик */
-  function setMaxBarHeightFraction(v) {
-    maxBarHeightFraction = Math.min(1, Math.max(0.02, v));
-  }
-
-  /**
-   * Сжимает/растягивает всю группу столбиков как единое целое по
-   * ширине (центрировано) — НЕ через изменение количества столбиков.
-   * 1 = во весь экран (как было изначально), меньше — уже, с фоном по
-   * бокам.
-   */
-  function setWidthFraction(v) {
-    widthFraction = Math.min(1, Math.max(0.05, v));
-  }
-
-  /**
-   * Размытие всего слоя через CSS filter — задаётся в % от ширины
-   * canvas, а не в фиксированных px (те не масштабируются под размер
-   * экрана: одинаковые px-значения дают совершенно разный визуальный
-   * эффект на широком десктопе и узком мобильном, где сами столбики
-   * физически в разы тоньше — фиксированное размытие там "съедало"
-   * контраст почти полностью). 0 = чёткие столбики, большие значения
-   * сливают их в сплошной градиентный фон.
-   */
-  function setBlurPercent(pct) {
-    blurPercent = Math.max(0, pct);
-    applyBlurFilter();
-  }
-
-  /** Полностью скрывает/показывает слой — режим "волна выключена". */
-  function setVisible(visible) {
-    canvas.style.display = visible ? "block" : "none";
-  }
-
-  /**
-   * Масштабирует ВЕСЬ canvas целиком через CSS transform (не через
-   * внутреннюю геометрию отрисовки) — центр остаётся на месте, при
-   * scale>1 края уходят за пределы видимой области. Это нормально:
-   * #scene-container/body не создают скроллбар от переполнения (body
-   * уже имеет overflow:hidden), лишнее просто визуально обрезается.
-   */
-  function setScale(factor) {
-    canvas.style.transform = factor === 1 ? "none" : `scale(${factor})`;
-  }
-
-  // ВРЕМЕННО (тест видео-фона, см. main.js) — включает/выключает
-  // непрозрачную заливку канваса волны собственным фоном. См. draw().
-  function setBackgroundVisible(visible) {
-    backgroundVisible = visible;
-  }
-
-  return {
-    update,
-    resize,
-    getBarCount,
-    setBarCount,
-    setBarGapFraction,
-    setMaxBarHeightFraction,
-    setWidthFraction,
-    setBlurPercent,
-    setVisible,
-    setScale,
-    setResizeSuspended,
-    setBackgroundVisible,
-  };
+/* Циклическая кнопка (ENG→UKR→RU→...) — тот же язык оформления, что и
+   у #playlists-btn (обводка, не заливка). */
+.settings-cycle-btn {
+  flex: 0 0 auto;
+  min-width: 64px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1.5px solid #4a4f5c;
+  background: transparent;
+  color: #d5d8dd;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
