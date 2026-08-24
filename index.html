@@ -114,6 +114,13 @@
          при свайпе #playlist-drag-handle вверх. Мобильный, десктоп его не
          видит (.mobile-only-control). -->
     <div id="playlist-sheet" class="mobile-only-control" aria-hidden="true">
+      <!-- Полоска-хендл внутри самой шторки — старый хендл (в #player)
+           теперь скрыт ПОД шторкой, когда она открыта (шторка — отдельный
+           слой поверх всего, см. style.css #playlist-sheet). Нужен свой,
+           видимый, чтобы было чем закрыть обратно. -->
+      <button id="playlist-sheet-handle" aria-label="Закрыть список треков">
+        <span class="handle-bar"></span>
+      </button>
       <div id="playlist-sheet-buttons-row">
         <button id="playlist-add-btn">+ Add Track</button>
         <button id="playlists-btn">Default Playlist</button>
