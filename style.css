@@ -1033,7 +1033,7 @@ input[type="range"]:disabled::-webkit-slider-thumb {
        содержимое самого элемента) — именно то, что нужно здесь.
        -webkit- версия обязательна для Safari/iOS, без префикса там не
        сработает вообще. */
-    background: rgba(20, 22, 27, 0.72);
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
