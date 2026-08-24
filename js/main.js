@@ -524,6 +524,7 @@ videoBgFileInput.addEventListener("change", () => {
   videoBgEl.style.borderRadius = "inherit"; // те же скруглённые углы, что и у самой сцены
   container.appendChild(videoBgEl);
   videoBgFileInput.value = "";
+  soundWave.setBackgroundVisible(false); // иначе непрозрачная заливка волны полностью закрывала бы видео позади неё
 });
 
 (function setupVideoBgToggle() {
