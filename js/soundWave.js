@@ -104,8 +104,17 @@ export function createSoundWave(container) {
   }
 
   function resize() {
-    width = container.clientWidth;
-    height = container.clientHeight;
+    // getBoundingClientRect() + Math.ceil — та же причина, что и в
+    // scene.js (см. подробный комментарий там): контейнер может получить
+    // дробную высоту в пикселях (кнопка масштаба сцены), а
+    // clientWidth/clientHeight округляют к БЛИЖАЙШЕМУ целому, иногда
+    // вниз — канвас волны на долю пикселя МЕНЬШЕ контейнера, в щель
+    // просвечивает слой позади (красный диагностический/видео-фон, см.
+    // main.js). Округление вверх гарантирует канвас минимум с
+    // контейнер, никогда не меньше.
+    const rect = container.getBoundingClientRect();
+    width = Math.ceil(rect.width);
+    height = Math.ceil(rect.height);
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
