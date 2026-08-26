@@ -37,13 +37,22 @@
         <div id="track-artist-mobile"></div>
       </div>
 
-      <div id="audio-debug" hidden>
-        <div>volume <span id="dbg-volume">0.00</span></div>
-        <div>bass <span id="dbg-bass">0.00</span></div>
-        <div>mid <span id="dbg-mid">0.00</span></div>
-        <div>treble <span id="dbg-treble">0.00</span></div>
-        <div>intensity <span id="dbg-intensity">0.00</span></div>
-        <div>beat <span id="dbg-beat-dot"></span></div>
+      <!-- ВРЕМЕННО (тест звёздного туннеля, см. starTunnel.js) — панель
+           визуализации аудио-значений: каждая строка — горизонтальный
+           прямоугольник, заполняется цветом слева направо пропорционально
+           значению (0..1), подпись — прямо внутри самого прямоугольника.
+           Раньше здесь была текстовая debug-панель, видимая только через
+           ?debug в адресной строке — теперь всегда видна, специально для
+           наглядного тестирования новых реакций визуализатора. -->
+      <div id="audio-debug">
+        <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-volume"></div><span class="debug-bar-label">volume</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-bass"></div><span class="debug-bar-label">bass</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-mid"></div><span class="debug-bar-label">mid</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-treble"></div><span class="debug-bar-label">treble</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-intensity"></div><span class="debug-bar-label">intensity</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-riserate"></div><span class="debug-bar-label">rise rate</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill is-beat" id="dbg-bar-beat"></div><span class="debug-bar-label">beat</span></div>
+        <div class="debug-bar"><div class="debug-bar-fill is-strong-beat" id="dbg-bar-strongbeat"></div><span class="debug-bar-label">strong beat</span></div>
       </div>
 
       <div id="dance-controls" aria-label="Character & dance pool controls">
