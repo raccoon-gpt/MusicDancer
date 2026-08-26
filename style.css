@@ -106,41 +106,58 @@ html, body {
 }
 
 /* --- Debug overlay (только ?debug=1, не часть финального UI — ТЗ п.15) --- */
+/* ВРЕМЕННО (тест звёздного туннеля, см. starTunnel.js) — панель
+   визуализации аудио-значений в виде горизонтальных полос. ВАЖНО: НЕ
+   position:absolute (как было у старой текстовой версии — та лежала
+   поверх сцены, в углу) — обычный элемент в потоке документа, занимает
+   собой тот самый промежуток между названием трека и панелью
+   персонажей, о котором шла речь. */
 #audio-debug {
+  padding: 8px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-bar {
+  position: relative;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.debug-bar-fill {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 8px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: #b7e3ff;
-  line-height: 1.5;
-  pointer-events: none;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0%; /* выставляется инлайн-стилем в main.js на каждый кадр */
+  background: linear-gradient(90deg, #3b6bff, #b83bff);
+  transition: width 0.05s linear;
 }
 
-#dbg-beat-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #33384a;
-  vertical-align: middle;
-  transition: background 60ms ease-out;
-}
-
-#dbg-beat-dot.active {
+/* beat/strong beat — не непрерывная величина 0..1, а вспышка-затухание
+   (см. main.js) — свой цвет, чтобы визуально отличались от обычных
+   непрерывных полос. */
+.debug-bar-fill.is-beat {
   background: #ff5a7f;
-  box-shadow: 0 0 6px #ff5a7f;
+}
+.debug-bar-fill.is-strong-beat {
+  background: #ffd15a;
 }
 
-#dbg-beat-dot.strong {
-  background: #ffd15a;
-  box-shadow: 0 0 10px #ffd15a;
-  width: 10px;
-  height: 10px;
+.debug-bar-label {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 0 8px;
+  font-size: 10px;
+  line-height: 16px;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9); /* читаемость независимо от того, насколько далеко зашла заливка под текстом */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* --- Character stack + dance pool controls --- */
