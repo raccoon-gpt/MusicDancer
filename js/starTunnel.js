@@ -94,13 +94,16 @@ export function createStarTunnel(container) {
   }
 
   let beatPulse = 0; // "рывок" скорости на сильный удар — резко вверх, плавно (экспоненциально) вниз, не мгновенно
+  let beatFlicker = 0; // лёгкое мерцание яркости на ОБЫЧНЫЙ удар — гаснет намного быстрее beatPulse, мгновенная вспышка, не задержанный рывок
 
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {{volume:number, bass:number, mid:number, treble:number}|null} features - аудио-фичи текущего кадра (см. audioAnalyzer.js), null — если музыка сейчас не играет
-   * @param {boolean} strongBeat - был ли в этом кадре сильный удар (см. beatDetector.js)
+   * @param {boolean} strongBeat - был ли в этом кадре сильный удар (см. beatDetector.js) — даёт рывок скорости
+   * @param {boolean} beat - был ли в этом кадре обычный удар — даёт лёгкое мерцание яркости, отдельно от рывка скорости
+   * @param {number} riseRate - скорость нарастания громкости прямо сейчас (0, если громкость падает/стоит; положительное число, тем больше, чем резче нарастание) — см. createVolumeRiseTracker в main.js
    */
-  function update(delta, features, strongBeat) {
+  function update(delta, features, strongBeat, beat = false, riseRate = 0) {
     if (canvas.style.display === "none") return; // не тратим ресурсы на кадры, которые всё равно не видны
 
     // Без музыки — тихий, спокойный "дрейф" (не полная остановка, чтобы
@@ -113,7 +116,16 @@ export function createStarTunnel(container) {
     if (strongBeat) beatPulse = 1;
     beatPulse *= Math.pow(0.015, delta); // экспоненциальное затухание — быстро гаснет, но не мгновенно
 
-    const baseSpeed = 40 + volume * 220;
+    if (beat) beatFlicker = 1;
+    beatFlicker *= Math.pow(0.0005, delta); // гаснет НАМНОГО быстрее beatPulse — почти мгновенная вспышка, не задержанный рывок
+
+    // riseRate — реакция именно на "музыка разгоняется", отдельно от
+    // мгновенной громкости самой по себе. Коэффициент 0.6 подобран так,
+    // чтобы эффект был заметен, но не доминировал над обычной реакцией на
+    // громкость — при необходимости легко подкрутить.
+    const riseBoost = Math.min(1, riseRate * 0.6);
+
+    const baseSpeed = 40 + volume * 220 + riseBoost * 140;
     const speed = baseSpeed * (1 + beatPulse * 2.2);
 
     ctx.fillStyle = "#04040a"; // тёмный, слегка синеватый космос — не абсолютно чёрный, чтобы не сливался с полностью чёрными областями сцены
@@ -145,7 +157,7 @@ export function createStarTunnel(container) {
       }
 
       const size = Math.max(0.6, perspective * (2.2 + treble * 3));
-      const brightness = Math.min(1, 0.25 + perspective * 0.9 + bass * 0.25);
+      const brightness = Math.min(1, 0.25 + perspective * 0.9 + bass * 0.25 + beatFlicker * 0.5);
       const hue = 210 + star.hueJitter * 50; // холодная сине-фиолетовая гамма, характерная для звёздного неба
       ctx.fillStyle = `hsla(${hue}, 75%, ${55 + brightness * 30}%, ${brightness})`;
       ctx.beginPath();
