@@ -45,6 +45,15 @@
            ?debug в адресной строке — теперь всегда видна, специально для
            наглядного тестирования новых реакций визуализатора. -->
       <div id="audio-debug">
+        <!-- Кликабельный заголовок — сворачивает/разворачивает саму
+             панель целиком (см. main.js). Панель тестовая, постоянно
+             занимает место по высоте, поджимая сцену — нужно уметь её
+             временно убрать, чтобы тестировать сцену на полном
+             развороте. -->
+        <button id="audio-debug-toggle" aria-expanded="true">
+          <span id="audio-debug-toggle-arrow">▾</span> audio debug
+        </button>
+        <div id="audio-debug-bars">
         <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-volume"></div><span class="debug-bar-label">volume</span></div>
         <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-bass"></div><span class="debug-bar-label">bass</span></div>
         <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-mid"></div><span class="debug-bar-label">mid</span></div>
@@ -53,6 +62,7 @@
         <div class="debug-bar"><div class="debug-bar-fill" id="dbg-bar-riserate"></div><span class="debug-bar-label">rise rate</span></div>
         <div class="debug-bar"><div class="debug-bar-fill is-beat" id="dbg-bar-beat"></div><span class="debug-bar-label">beat</span></div>
         <div class="debug-bar"><div class="debug-bar-fill is-strong-beat" id="dbg-bar-strongbeat"></div><span class="debug-bar-label">strong beat</span></div>
+        </div>
       </div>
 
       <div id="dance-controls" aria-label="Character & dance pool controls">
