@@ -54,7 +54,7 @@ const DUET_CONE_ANGLE = Math.PI / 30;
 // отражение вручную" — это просто следствие того, как Three.js обычно
 // считает освещение металлических поверхностей.
 function createDiscoBall(scene) {
-  const geometry = new THREE.IcosahedronGeometry(0.55, 2);
+  const geometry = new THREE.IcosahedronGeometry(1.1, 2); // увеличен в 2 раза (было 0.55)
   const material = new THREE.MeshStandardMaterial({
     color: 0xd8d8d8,
     metalness: 0.95,
@@ -62,20 +62,47 @@ function createDiscoBall(scene) {
     flatShading: true, // подчёркивает отдельные грани, а не сглаживает их — важно именно для "дискошарного" вида
   });
   const ball = new THREE.Mesh(geometry, material);
-  // Позади и повыше персонажа (персонаж стоит примерно в (0, ~0.9, 0),
-  // камера смотрит со стороны положительного Z — отрицательный Z
-  // значит "дальше от камеры", то есть визуально позади персонажа).
-  // Не над самими головами (лучи туда физически не попадают, см.
-  // геометрию прожекторов выше) — ближе к камере и ниже по высоте, чем
-  // была первая версия, примерно на уровне/чуть выше голов персонажей.
-  ball.position.set(0, 1.9, -0.3);
+  // Z вернули обратно на -1.3 (позади персонажа) — пробовали ближе к
+  // камере (-0.3), в итоге решили оставить как было изначально по
+  // глубине. Высота (1.9) — из прошлой правки, ниже самой первой версии.
+  ball.position.set(0, 1.9, -1.3);
   ball.visible = false; // изначально выключен — включается вместе с прожекторами через setEnabled
   scene.add(ball);
   return ball;
 }
 
+// Отдельные `4` белых прожектора ТОЛЬКО для дискошара — не для персонажа
+// (те, разноцветные, см. RIG_POSITIONS выше). Все источники стоят ВЫШЕ
+// максимального роста персонажа (тот не больше ~1.5) и СО СТОРОНЫ
+// КАМЕРЫ (положительный Z) — луч от источника до шара (сам шар тоже
+// выше персонажа, на высоте 1.9) идёт целиком поверх зоны, где стоят
+// персонажи, не задевая их. Белый цвет — чтобы отражения на гранях шара
+// читались чисто, не окрашивались ещё и отдельным цветом источника
+// поверх того, что уже отражается от цветных прожекторов персонажа.
+// Светят СПЕРЕДИ (со стороны камеры), не сзади — иначе видимые блики
+// достались бы задней, невидимой зрителю стороне шара.
+function createBallLights(scene, ball) {
+  const positions = [
+    new THREE.Vector3(-1.0, 2.6, 0.4),
+    new THREE.Vector3(1.0, 2.6, 0.4),
+    new THREE.Vector3(-0.6, 3.0, 0.9),
+    new THREE.Vector3(0.6, 3.0, 0.9),
+  ];
+  const lights = positions.map((pos) => {
+    const light = new THREE.SpotLight(0xffffff, 0, 6, Math.PI / 14, 0.4, 1.2);
+    light.position.copy(pos);
+    light.target.position.copy(ball.position);
+    light.visible = false; // изначально выключены — включаются вместе с остальным через setEnabled
+    scene.add(light);
+    scene.add(light.target);
+    return light;
+  });
+  return lights;
+}
+
 export function createDiscoLights(scene) {
   const discoBall = createDiscoBall(scene);
+  const ballLights = createBallLights(scene, discoBall);
 
   const fixtures = DISCO_COLORS.map((color, i) => {
     const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
@@ -128,6 +155,17 @@ export function createDiscoLights(scene) {
     beatPulse *= Math.pow(0.02, delta); // плавное, но довольно быстрое затухание вспышки
     discoBall.rotation.y += (0.4 + beatPulse * 1.2) * delta;
 
+    // Яркость ламп шара — та же природа масштаба, что и у прожекторов
+    // персонажа (физически корректное освещение, см. подробный
+    // комментарий ниже про baseIntensity) — держим её более-менее
+    // постоянной, слегка пульсирующей на удар, а не завязанной на
+    // intensity музыки — шар должен ровно поблёскивать, не мигать
+    // резко в такт энергичности момента.
+    const ballLightIntensity = 18 * (1 + beatPulse * 0.8);
+    ballLights.forEach((light) => {
+      light.intensity = ballLightIntensity;
+    });
+
     // ВАЖНО: числа яркости здесь НАМНОГО больше, чем у key/rim-света в
     // scene.js (там 1.6/0.4) — это не опечатка. В Three.js 0.160.0 по
     // умолчанию включена "физически корректная" система освещения, где у
@@ -155,6 +193,9 @@ export function createDiscoLights(scene) {
   function setEnabled(value) {
     enabled = value;
     discoBall.visible = value;
+    ballLights.forEach((light) => {
+      light.visible = value;
+    });
     fixtures.forEach(({ light, helper }) => {
       light.visible = value;
       // Хелпер подчиняется ОБЩЕМУ выключению света (если свет выключен —
