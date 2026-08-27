@@ -426,7 +426,7 @@ function createBallRays(container) {
       // достигает пика к ~35% — визуально веер как будто выходит не из
       // точки, а из тёмного провала ("чёрная дыра"), затем как обычно
       // гаснет к своему концу.
-      const alpha = 0.34 * brightness;
+      const alpha = 0.2 * brightness; // было 0.34 — по просьбе снизили пиковую видимость лучей (диапазон был ~19-34%, стал ~11-20%)
       const gradient = ctx.createLinearGradient(screenPos.x, screenPos.y, endX, endY);
       gradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
       gradient.addColorStop(0.12, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
