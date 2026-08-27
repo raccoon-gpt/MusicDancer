@@ -549,6 +549,27 @@ export function createDiscoLights(scene, container, camera) {
   let targetBallScale = SOLO_BALL_SCALE;
   const BALL_TRANSITION_SPEED = 3; // чем больше — тем быстрее шар "догоняет" целевые высоту/масштаб
 
+  // "Базовый" масштаб (без пульсации от mid, см. ниже) — храним ОТДЕЛЬНО
+  // от discoBall.scale.x. Если бы пульсацию просто умножали и сразу
+  // записывали обратно в discoBall.scale, то на следующем кадре
+  // интерполяция к targetBallScale отталкивалась бы уже от
+  // "запульсировавшего" значения, а не от чистого — пульсация подмешалась
+  // бы в сам переход соло/дуэт и он полз бы неровно. Так база и
+  // пульсация независимы: сначала база плавно идёт к targetBallScale,
+  // потом поверх неё домножается текущая пульсация.
+  let baseBallScale = SOLO_BALL_SCALE;
+
+  // Сглаженное значение mid — сырые данные из audioAnalyzer.js
+  // намеренно "дёрганые" от кадра к кадру (см. комментарий про
+  // smoothingTimeConstant там), это нужно для точного детектора битов,
+  // но для плавной пульсации размера шара сырое значение подряд по
+  // кадрам выглядело бы как дрожь, а не как дыхание. Сглаживаем здесь
+  // отдельно, своим темпом — не переиспользуем beatPulse/intensity,
+  // у них другая физика (короткая вспышка на удар, а не плавное
+  // "дыхание" в такт mid-частотам).
+  let smoothedMid = 0;
+  const MID_PULSE_STRENGTH = 0.1; // на сколько максимум "раздувается" шар при mid=1 (10% от текущего размера)
+
   // Переиспользуемые объекты — не создаём новый Vector3/объект каждый
   // кадр только чтобы посчитать экранную проекцию шара для лучей.
   const projectedPosition = new THREE.Vector3();
@@ -558,8 +579,9 @@ export function createDiscoLights(scene, container, camera) {
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
    * @param {boolean} strongBeat - был ли в этом кадре сильный удар — короткая вспышка яркости
+   * @param {number} mid - 0..1, средние частоты (см. features.mid в audioAnalyzer.js/main.js) — лёгкая пульсация размера шара в такт им, отдельно от beatPulse/intensity
    */
-  function update(delta, intensity = 0, strongBeat = false) {
+  function update(delta, intensity = 0, strongBeat = false, mid = 0) {
     if (!enabled) return;
     time += delta;
 
@@ -570,6 +592,12 @@ export function createDiscoLights(scene, container, camera) {
     if (strongBeat) beatPulse = 1;
     beatPulse *= Math.pow(0.02, delta); // плавное, но довольно быстрое затухание вспышки
 
+    // Сглаживание mid — та же экспоненциальная схема, что и у
+    // ballEase/homeEase в других местах: "догоняем" сырое значение с
+    // определённой скоростью, а не берём его напрямую.
+    const midEase = 1 - Math.pow(0.001, delta);
+    smoothedMid += (mid - smoothedMid) * midEase;
+
     // Вращение дискошара — ПОСТОЯННАЯ скорость, без реакции на удар (по
     // просьбе — раньше ускорялось вместе с beatPulse, теперь всегда
     // одинаково).
@@ -578,11 +606,13 @@ export function createDiscoLights(scene, container, camera) {
     // Высота/масштаб шара плавно стремятся к целевым значениям текущего
     // режима (см. setDuetMode) — простая экспоненциальная интерполяция,
     // тот же принцип, что и smart-камера "плывёт домой" в main.js, а не
-    // резкий скачок на новое значение.
+    // резкий скачок на новое значение. Пульсация от mid (см. выше)
+    // накладывается уже ПОСЛЕ этого, как отдельный множитель поверх
+    // базового масштаба — см. комментарий у baseBallScale.
     const ballEase = 1 - Math.pow(0.02, delta * BALL_TRANSITION_SPEED);
     discoBall.position.y += (targetBallY - discoBall.position.y) * ballEase;
-    const currentScale = discoBall.scale.x + (targetBallScale - discoBall.scale.x) * ballEase;
-    discoBall.scale.setScalar(currentScale);
+    baseBallScale += (targetBallScale - baseBallScale) * ballEase;
+    discoBall.scale.setScalar(baseBallScale * (1 + smoothedMid * MID_PULSE_STRENGTH));
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
