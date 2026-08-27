@@ -17,7 +17,9 @@
  * точкам подвеса (см. RIG_POSITIONS), каждый вращает свою цель вокруг
  * персонажа со своей собственной скоростью (не синхронно — иначе
  * выглядело бы механически, не как настоящая дискотека), яркость
- * пульсирует от музыки.
+ * пульсирует от музыки. Плюс гранёный вращающийся дискошар позади
+ * персонажа (см. createDiscoBall) — металлический материал, естественно
+ * ловит блики от тех же самых прожекторов.
  */
 
 import * as THREE from "three";
@@ -43,7 +45,35 @@ const RIG_POSITIONS = [
 const SOLO_CONE_ANGLE = Math.PI / 18;
 const DUET_CONE_ANGLE = Math.PI / 30;
 
+// Дискошар — гранёная сфера (IcosahedronGeometry с низкой детализацией
+// даёт характерный "зеркально-панельный" вид, не гладкий шар) с
+// металлическим отражающим материалом. Специально НЕ отдельный canvas-
+// слой, а настоящий 3D-объект в той же сцене — благодаря этому он
+// естественным образом ловит и отражает блики от уже существующих
+// цветных SpotLight выше, безо всякой отдельной логики "нарисовать
+// отражение вручную" — это просто следствие того, как Three.js обычно
+// считает освещение металлических поверхностей.
+function createDiscoBall(scene) {
+  const geometry = new THREE.IcosahedronGeometry(0.32, 2);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xd8d8d8,
+    metalness: 0.95,
+    roughness: 0.18,
+    flatShading: true, // подчёркивает отдельные грани, а не сглаживает их — важно именно для "дискошарного" вида
+  });
+  const ball = new THREE.Mesh(geometry, material);
+  // Позади и повыше персонажа (персонаж стоит примерно в (0, ~0.9, 0),
+  // камера смотрит со стороны положительного Z — отрицательный Z
+  // значит "дальше от камеры", то есть визуально позади персонажа).
+  ball.position.set(0, 2.5, -1.3);
+  ball.visible = false; // изначально выключен — включается вместе с прожекторами через setEnabled
+  scene.add(ball);
+  return ball;
+}
+
 export function createDiscoLights(scene) {
+  const discoBall = createDiscoBall(scene);
+
   const fixtures = DISCO_COLORS.map((color, i) => {
     const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
     // Разбиваем цвета по точкам подвеса поочерёдно (0,1,0,1,0,1) — у
@@ -88,8 +118,12 @@ export function createDiscoLights(scene) {
     if (!enabled) return;
     time += delta;
 
+    // Вращение дискошара — постоянное, плюс лёгкое ускорение на сильный
+    // удар (тот же beatPulse, что и у вспышки яркости прожекторов ниже —
+    // считаем один раз, используем в обоих местах).
     if (strongBeat) beatPulse = 1;
     beatPulse *= Math.pow(0.02, delta); // плавное, но довольно быстрое затухание вспышки
+    discoBall.rotation.y += (0.4 + beatPulse * 1.2) * delta;
 
     // ВАЖНО: числа яркости здесь НАМНОГО больше, чем у key/rim-света в
     // scene.js (там 1.6/0.4) — это не опечатка. В Three.js 0.160.0 по
@@ -117,6 +151,7 @@ export function createDiscoLights(scene) {
   /** Включает/выключает разом все прожекторы (и диагностические конусы вместе с ними). */
   function setEnabled(value) {
     enabled = value;
+    discoBall.visible = value;
     fixtures.forEach(({ light, helper }) => {
       light.visible = value;
       // Хелпер подчиняется ОБЩЕМУ выключению света (если свет выключен —
