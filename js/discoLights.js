@@ -60,6 +60,13 @@ function createDiscoBall(scene) {
     metalness: 0.95,
     roughness: 0.18,
     flatShading: true, // подчёркивает отдельные грани, а не сглаживает их — важно именно для "дискошарного" вида
+    // Лёгкое собственное свечение ("как будто сам излучает изнутри") —
+    // отдельно от того, что просто отражает внешние источники (лампы
+    // шара выше + прожекторы персонажа). Значение умеренное — иначе шар
+    // превратился бы в равномерно светящийся фонарь и потерял сам эффект
+    // гранёных зеркальных бликов, ради которого он вообще нужен.
+    emissive: 0x999999,
+    emissiveIntensity: 0.15,
   });
   const ball = new THREE.Mesh(geometry, material);
   // Z вернули обратно на -1.3 (позади персонажа) — пробовали ближе к
@@ -95,7 +102,13 @@ function createBallLights(scene, ball) {
     light.visible = false; // изначально выключены — включаются вместе с остальным через setEnabled
     scene.add(light);
     scene.add(light.target);
-    return light;
+    // Раньше тут не было хелпера вообще (в отличие от цветных ламп
+    // персонажа выше) — из-за этого лучи для шара не показывались в
+    // диагностическом режиме, хотя сам свет и работал.
+    const helper = new THREE.SpotLightHelper(light);
+    helper.visible = false;
+    scene.add(helper);
+    return { light, helper };
   });
   return lights;
 }
@@ -148,12 +161,17 @@ export function createDiscoLights(scene) {
     if (!enabled) return;
     time += delta;
 
-    // Вращение дискошара — постоянное, плюс лёгкое ускорение на сильный
-    // удар (тот же beatPulse, что и у вспышки яркости прожекторов ниже —
-    // считаем один раз, используем в обоих местах).
+    // beatPulse — короткая вспышка на удар (плавно вверх, экспоненциально
+    // вниз), используется ниже для яркости и ламп шара, и прожекторов
+    // персонажа. Вращение шара — НЕ использует это (см. ниже, постоянная
+    // скорость по просьбе).
     if (strongBeat) beatPulse = 1;
     beatPulse *= Math.pow(0.02, delta); // плавное, но довольно быстрое затухание вспышки
-    discoBall.rotation.y += (0.4 + beatPulse * 1.2) * delta;
+
+    // Вращение дискошара — ПОСТОЯННАЯ скорость, без реакции на удар (по
+    // просьбе — раньше ускорялось вместе с beatPulse, теперь всегда
+    // одинаково).
+    discoBall.rotation.y += 0.4 * delta;
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
@@ -162,8 +180,9 @@ export function createDiscoLights(scene) {
     // intensity музыки — шар должен ровно поблёскивать, не мигать
     // резко в такт энергичности момента.
     const ballLightIntensity = 18 * (1 + beatPulse * 0.8);
-    ballLights.forEach((light) => {
+    ballLights.forEach(({ light, helper }) => {
       light.intensity = ballLightIntensity;
+      helper.update(); // та же причина, что и у хелперов персонажа — сам не отслеживает изменения target/angle
     });
 
     // ВАЖНО: числа яркости здесь НАМНОГО больше, чем у key/rim-света в
@@ -193,8 +212,10 @@ export function createDiscoLights(scene) {
   function setEnabled(value) {
     enabled = value;
     discoBall.visible = value;
-    ballLights.forEach((light) => {
+    ballLights.forEach(({ light, helper }) => {
       light.visible = value;
+      if (!value) helper.visible = false;
+      else helper.visible = helpersVisible;
     });
     fixtures.forEach(({ light, helper }) => {
       light.visible = value;
@@ -214,6 +235,9 @@ export function createDiscoLights(scene) {
   function setHelpersVisible(value) {
     helpersVisible = value;
     if (!enabled) return; // при выключенном свете хелперы и так скрыты — нечего обновлять
+    ballLights.forEach(({ helper }) => {
+      helper.visible = value;
+    });
     fixtures.forEach(({ helper }) => {
       helper.visible = value;
     });
