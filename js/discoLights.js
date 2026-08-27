@@ -31,8 +31,8 @@ const DISCO_COLORS = [0xff3b6b, 0x3b6bff, 0x3bff9e, 0xffd93b, 0xb83bff, 0x3bdfff
 // Персонаж стоит примерно в (0, ~0.9, 0) — см. scene.js/main.js
 // groundAndCenterModel.
 const RIG_POSITIONS = [
-  new THREE.Vector3(-1.0, 3.2, 0), // немного левее центра
-  new THREE.Vector3(1.0, 3.2, 0), // немного правее центра
+  new THREE.Vector3(-1.6, 3.2, 0), // немного левее центра
+  new THREE.Vector3(1.6, 3.2, 0), // немного правее центра
 ];
 
 export function createDiscoLights(scene) {
