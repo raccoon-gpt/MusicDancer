@@ -210,6 +210,14 @@ function createDiscoBallTextures() {
 // решения "чёрный вид без подсветки нравится больше" (см. историю
 // выше) — пользователь явно попросил радужный вид, как на референсах,
 // а не чистый хром.
+//
+// Стартовая высота/масштаб — СРАЗУ соло-значения (SOLO_BALL_Y/
+// SOLO_BALL_SCALE), не дуэтные — по умолчанию сайт открывается с одной
+// белкой (соло), поэтому именно это должно быть видно сразу, без
+// "прыжка" из дуэтного положения в соло на первом кадре. Плавный
+// переход в дуэт (если пользователь позовёт второго персонажа)
+// по-прежнему считается в update() — см. targetBallY/targetBallScale в
+// createDiscoLights.
 function createDiscoBall(scene) {
   const geometry = new THREE.SphereGeometry(1.1, 64, 48);
   const { colorMap, normalMap } = createDiscoBallTextures();
@@ -221,10 +229,10 @@ function createDiscoBall(scene) {
     roughness: 0.25,
   });
   const ball = new THREE.Mesh(geometry, material);
-  // Z вернули обратно на -1.3 (позади персонажа) — пробовали ближе к
-  // камере (-0.3), в итоге решили оставить как было изначально по
-  // глубине. Высота (1.9) — из прошлой правки, ниже самой первой версии.
-  ball.position.set(0, 1.9, -1.3);
+  // X/Z — как раньше (0, -1.3, позади персонажа). Y — соло-высота по
+  // умолчанию (см. комментарий выше), не прежняя дуэтная 1.9.
+  ball.position.set(0, SOLO_BALL_Y, -1.3);
+  ball.scale.setScalar(SOLO_BALL_SCALE);
   ball.visible = false; // изначально выключен — включается вместе с прожекторами через setEnabled
   scene.add(ball);
   return ball;
@@ -382,13 +390,33 @@ function createBallRays(container) {
     // светлее, а не просто "закрашено сверху".
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
+    // Лёгкое размытие — раньше лучи были тонкими чёткими линиями, по
+    // просьбе пользователя сделаны мягче. ctx.filter применяется к
+    // каждой фигуре, которую рисуем ПОСЛЕ его установки — то есть и к
+    // самим лучам, и к финальному размытому краю. Радиус небольшой (не
+    // 10+px) — иначе на маленьком экране телефона веер превратился бы
+    // в сплошное цветное пятно без читаемых отдельных лучей.
+    ctx.filter = "blur(3px)";
 
     for (let i = 0; i < RAY_COUNT; i++) {
       const angle = angleOffset + (i / RAY_COUNT) * Math.PI * 2;
       const color = colors[(i + colorPhase) % colors.length];
       const len = maxLen * (0.55 + 0.45 * Math.sin(i * 2.1 + angleOffset * 3));
-      const endX = screenPos.x + Math.cos(angle) * len;
-      const endY = screenPos.y + Math.sin(angle) * len;
+      const dirX = Math.cos(angle);
+      const dirY = Math.sin(angle);
+      const endX = screenPos.x + dirX * len;
+      const endY = screenPos.y + dirY * len;
+
+      // Раньше луч был просто ОДНОЙ линией постоянной толщины (обычный
+      // stroke) — теперь вместо линии рисуем ЗАЛИТУЮ трапецию: узкую у
+      // "дыры" в центре и расширяющуюся к концу луча (см. просьбу
+      // пользователя — "расширяющиеся на пути в конец"), это просто
+      // четырёхугольник вдоль направления луча со сторонами
+      // startWidth/endWidth.
+      const perpX = -dirY;
+      const perpY = dirX;
+      const startWidth = 2 + brightness * 2;
+      const endWidth = 16 + brightness * 14;
 
       // Раньше лучи начинались ПРЯМО от screenPos с полной силой, плюс
       // отдельным кругом рисовалась белая "точка" в центре (см. историю
@@ -405,12 +433,14 @@ function createBallRays(container) {
       gradient.addColorStop(0.35, `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`);
       gradient.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
 
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 3 + brightness * 4;
+      ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.moveTo(screenPos.x, screenPos.y);
-      ctx.lineTo(endX, endY);
-      ctx.stroke();
+      ctx.moveTo(screenPos.x + perpX * startWidth * 0.5, screenPos.y + perpY * startWidth * 0.5);
+      ctx.lineTo(screenPos.x - perpX * startWidth * 0.5, screenPos.y - perpY * startWidth * 0.5);
+      ctx.lineTo(endX - perpX * endWidth * 0.5, endY - perpY * endWidth * 0.5);
+      ctx.lineTo(endX + perpX * endWidth * 0.5, endY + perpY * endWidth * 0.5);
+      ctx.closePath();
+      ctx.fill();
     }
 
     ctx.restore();
@@ -494,9 +524,13 @@ export function createDiscoLights(scene, container, camera) {
 
   // Целевые высота/масштаб шара для текущего режима (соло/дуэт) — сама
   // позиция/масштаб плавно "догоняют" эти значения каждый кадр (см.
-  // BALL_TRANSITION_SPEED ниже), не переключаются мгновенно.
-  let targetBallY = DUET_BALL_Y;
-  let targetBallScale = DUET_BALL_SCALE;
+  // BALL_TRANSITION_SPEED ниже), не переключаются мгновенно. Стартуют
+  // именно с соло-значений — см. комментарий в createDiscoBall выше,
+  // почему шар и создаётся сразу в соло-положении: main.js вызовет
+  // setDuetMode(true) сам, как только (и если) на сцене появится второй
+  // персонаж, тогда эти цели поменяются и шар плавно перейдёт в дуэт.
+  let targetBallY = SOLO_BALL_Y;
+  let targetBallScale = SOLO_BALL_SCALE;
   const BALL_TRANSITION_SPEED = 3; // чем больше — тем быстрее шар "догоняет" целевые высоту/масштаб
 
   // Переиспользуемые объекты — не создаём новый Vector3/объект каждый
