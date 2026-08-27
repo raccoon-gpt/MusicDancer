@@ -95,10 +95,10 @@ export function createDiscoLights(scene) {
 
     fixtures.forEach(({ light, helper, baseAngle, speed }) => {
       const angle = baseAngle + time * speed;
-      // Радиус широкий (2.4) — та самая комбинация, которая изначально
-      // понравилась ("это красиво"), только теперь с двумя точками
-      // подвеса вместо одной — см. RIG_POSITIONS выше.
-      const radius = 2.4;
+      // Радиус сужен с 2.4 — мишени одной точки подвеса (разнесённые
+      // друг от друга на 120° по кругу, см. baseAngle выше) теперь
+      // ближе друг к другу, не расходятся так широко веером.
+      const radius = 1.2;
       light.target.position.set(Math.cos(angle) * radius, 0.9, Math.sin(angle) * radius);
       light.intensity = baseIntensity * flashBoost;
       helper.update(); // SpotLightHelper сам не отслеживает изменения target — без этого вызова проволочный конус остался бы неподвижным
