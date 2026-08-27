@@ -35,9 +35,17 @@ const RIG_POSITIONS = [
   new THREE.Vector3(1.6, 3.2, 0), // немного правее центра
 ];
 
+// Угол конуса — РАЗНЫЙ для соло и дуэта (см. setDuetMode ниже), подобран
+// и присвоен пользователем отдельно под каждый случай после тестов —
+// делитель Math.PI/N: N=18 даёт 10° (соло), N=30 даёт 6° (дуэт, ýже —
+// персонажи стоят дальше друг от друга, более узкий луч точнее ложится
+// на каждого по отдельности).
+const SOLO_CONE_ANGLE = Math.PI / 18;
+const DUET_CONE_ANGLE = Math.PI / 30;
+
 export function createDiscoLights(scene) {
   const fixtures = DISCO_COLORS.map((color, i) => {
-    const light = new THREE.SpotLight(color, 0, 8, Math.PI / 30, 0.5, 1.2);
+    const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
     // Разбиваем цвета по точкам подвеса поочерёдно (0,1,0,1,0,1) — у
     // каждой точки подвеса получается по 3 прожектора своего цвета.
     const rigPosition = RIG_POSITIONS[i % RIG_POSITIONS.length];
@@ -132,5 +140,15 @@ export function createDiscoLights(scene) {
     });
   }
 
-  return { update, setEnabled, setHelpersVisible };
+  /** Переключает угол конуса всех прожекторов между соло/дуэт-значениями
+   * (см. SOLO_CONE_ANGLE/DUET_CONE_ANGLE выше) — вызывается из main.js
+   * при каждой смене состава активных персонажей. */
+  function setDuetMode(isDuet) {
+    const angle = isDuet ? DUET_CONE_ANGLE : SOLO_CONE_ANGLE;
+    fixtures.forEach(({ light }) => {
+      light.angle = angle;
+    });
+  }
+
+  return { update, setEnabled, setHelpersVisible, setDuetMode };
 }
