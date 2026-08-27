@@ -634,7 +634,11 @@ export function createDiscoLights(scene, container, camera) {
     const ballEase = 1 - Math.pow(0.02, delta * BALL_TRANSITION_SPEED);
     discoBall.position.y += (targetBallY - discoBall.position.y) * ballEase;
     baseBallScale += (targetBallScale - baseBallScale) * ballEase;
-    discoBall.scale.setScalar(baseBallScale * (1 + smoothedBallPulse * BALL_PULSE_STRENGTH));
+    // Знак минус — по просьбе пользователя пульсация УМЕНЬШАЕТ шар на
+    // ударе (не увеличивает, как в первой версии) — те же самые
+    // значения (smoothedBallPulse/BALL_PULSE_STRENGTH), просто вычитаем,
+    // а не прибавляем.
+    discoBall.scale.setScalar(baseBallScale * (1 - smoothedBallPulse * BALL_PULSE_STRENGTH));
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
