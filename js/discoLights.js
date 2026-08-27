@@ -37,7 +37,7 @@ const RIG_POSITIONS = [
 
 export function createDiscoLights(scene) {
   const fixtures = DISCO_COLORS.map((color, i) => {
-    const light = new THREE.SpotLight(color, 0, 8, Math.PI / 18, 0.5, 1.2);
+    const light = new THREE.SpotLight(color, 0, 8, Math.PI / 30, 0.5, 1.2);
     // Разбиваем цвета по точкам подвеса поочерёдно (0,1,0,1,0,1) — у
     // каждой точки подвеса получается по 3 прожектора своего цвета.
     const rigPosition = RIG_POSITIONS[i % RIG_POSITIONS.length];
