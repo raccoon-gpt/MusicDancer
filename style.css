@@ -119,6 +119,46 @@ html, body {
   gap: 4px;
 }
 
+#audio-debug-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: #8a8f98;
+  font-size: 11px;
+  cursor: pointer;
+  align-self: flex-start; /* не растягивать на всю ширину — сам заголовок компактный, кликается только по себе, не по всей строке */
+}
+
+#audio-debug-toggle-arrow {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+/* Стрелка поворачивается на 180° в свёрнутом состоянии — было ▾ (вниз),
+   становится ▸-подобно повёрнутой, визуально "смотрит вбок/вверх". */
+#audio-debug-toggle[aria-expanded="false"] #audio-debug-toggle-arrow {
+  transform: rotate(-90deg);
+}
+
+#audio-debug-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  max-height: 400px; /* заведомо больше, чем нужно для 8 полос — явное числовое значение нужно для плавной анимации, переход к none/auto не анимируется */
+  transition: max-height 0.2s ease, opacity 0.15s ease;
+}
+
+/* Свёрнутое состояние — через max-height:0 (не display:none), чтобы
+   переход был плавным, не резким рывком. */
+#audio-debug-bars.is-collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+}
+
 .debug-bar {
   position: relative;
   height: 16px;
