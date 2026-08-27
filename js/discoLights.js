@@ -67,6 +67,7 @@ export function createDiscoLights(scene) {
   });
 
   let enabled = false;
+  let helpersVisible = true; // при включении света хелперы по умолчанию видны — первый клик кнопки (см. main.js) должен показать и свет, и хелпер разом
   let time = 0;
   let beatPulse = 0; // короткая вспышка яркости на удар, гаснет плавно — тот же принцип, что и в starTunnel.js
 
@@ -110,10 +111,26 @@ export function createDiscoLights(scene) {
     enabled = value;
     fixtures.forEach(({ light, helper }) => {
       light.visible = value;
-      helper.visible = value;
+      // Хелпер подчиняется ОБЩЕМУ выключению света (если свет выключен —
+      // хелпер тоже гаснет, ему нечего показывать), но НЕ включается
+      // здесь автоматически — сам показ хелпера при включённом свете
+      // управляется отдельно, через setHelpersVisible ниже.
+      if (!value) helper.visible = false;
+      else helper.visible = helpersVisible;
     });
     if (!value) beatPulse = 0; // не копим вспышку, пока выключено — иначе при следующем включении был бы неожиданный резкий скачок яркости
   }
 
-  return { update, setEnabled };
+  /** Показывает/прячет диагностические конусы ОТДЕЛЬНО от самого света —
+   * свет при этом продолжает гореть в любом случае, меняется только
+   * видимость самих проволочных конусов. */
+  function setHelpersVisible(value) {
+    helpersVisible = value;
+    if (!enabled) return; // при выключенном свете хелперы и так скрыты — нечего обновлять
+    fixtures.forEach(({ helper }) => {
+      helper.visible = value;
+    });
+  }
+
+  return { update, setEnabled, setHelpersVisible };
 }
