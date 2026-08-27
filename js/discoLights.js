@@ -4,15 +4,7 @@
  * вокруг персонажа и подсвечивают его цветом по-настоящему — свет падает
  * на реальную геометрию/материал персонажа, так же, как обычный
  * key/rim-свет уже делает (см. scene.js). Именно поэтому это отдельный
- * модуль, работающий через саму 3D-сцену, а не ещё один canvas-слой —
- * ЗА ИСКЛЮЧЕНИЕМ лучей света вокруг дискошара (см. createBallRays ниже),
- * это единственная часть модуля, которая всё-таки рисуется на
- * отдельном 2D-канвасе (см. createBallRays — технически ПОД сценой, не
- * поверх неё, специально, чтобы персонажи и сам шар перекрывали лучи
- * своей непрозрачной геометрией, а не лучи ложились поверх них), потому
- * что "расходящиеся лучи"
- * из референсов пользователя — не то, что настоящий SpotLight умеет
- * делать сам по себе (это стилизация, не физический эффект).
+ * модуль, работающий через саму 3D-сцену, а не canvas-слой.
  *
  * ИСТОРИЯ (важно для понимания текущей геометрии): первая версия вешала
  * ВСЕ прожекторы в ОДНОЙ точке строго над центром сцены — работало, но
@@ -29,19 +21,26 @@
  * персонажа (см. createDiscoBall) — металлический материал, естественно
  * ловит блики от тех же самых прожекторов.
  *
- * ВТОРОЙ РАУНД ПРАВОК (текущий) — дискошар менял вид: изначально это
- * была просто серая IcosahedronGeometry с низкой детализацией
- * (flatShading, ~80 крупных треугольных граней) — это давало эффект
- * "два больших слитных светлых пятна сверху" вместо множества мелких
- * точечных бликов, потому что граней физически слишком мало, чтобы
- * дробить блик на много кусочков. Пользователь показал референсы
- * классических дискошаров (мелкие радужные зеркальные плитки, десятки
- * бликов по всей поверхности, расходящиеся лучи света) — см.
- * createDiscoBallTextures/createBallRays ниже, это и есть ответ на тот
- * референс. ПОДХОД: не поднимать полигонаж реальной геометрии (сфера
- * стала ГЛАДКОЙ, не гранёной), а рисовать "грани" через normal map —
- * так дешевле получить сотни мелких плиток, чем считать реальную
+ * ВТОРОЙ РАУНД ПРАВОК — дискошар менял вид: изначально это была просто
+ * серая IcosahedronGeometry с низкой детализацией (flatShading, ~80
+ * крупных треугольных граней) — это давало эффект "два больших слитных
+ * светлых пятна сверху" вместо множества мелких точечных бликов, потому
+ * что граней физически слишком мало, чтобы дробить блик на много
+ * кусочков. Пользователь показал референсы классических дискошаров
+ * (мелкие радужные зеркальные плитки, десятки бликов по всей
+ * поверхности) — см. createDiscoBallTextures ниже, это и есть ответ на
+ * тот референс. ПОДХОД: не поднимать полигонаж реальной геометрии
+ * (сфера стала ГЛАДКОЙ, не гранёной), а рисовать "грани" через normal
+ * map — так дешевле получить сотни мелких плиток, чем считать реальную
  * геометрию с тем же числом граней.
+ *
+ * ТРЕТИЙ РАУНД ПРАВОК — был ещё отдельный слой "расходящихся лучей"
+ * вокруг шара (2D-canvas поверх/под сценой, см. createBallRays) — по
+ * прямой просьбе пользователя УБРАН СОВСЕМ. Если понадобится вернуть —
+ * ищи в истории версий файла (был проекцией позиции шара на экран через
+ * camera.project() + градиентные "лепестки" веером, рисовался в
+ * отдельном <canvas>).
+
  */
 
 import * as THREE from "three";
@@ -291,217 +290,12 @@ function createBallLights(scene, ball) {
   return lights;
 }
 
-
-// --- Лучи света вокруг дискошара (2D-канвас ПОД сценой) ---
-//
-// Это НЕ настоящий 3D-объект и не физический эффект реального
-// SpotLight — на референсах пользователя (картинки 1, 3, 4) лучи,
-// расходящиеся из шара, это чисто стилизация/пост-эффект, так обычно и
-// делают даже в честном 3D (в реальном рендере это был бы дорогой
-// volumetric-god-rays проход). Технически устроено так же, как
-// soundWave.js/starTunnel.js — отдельный canvas-слой поверх контейнера
-// сцены, тот же принцип resize (getBoundingClientRect + Math.ceil,
-// rAF-throttle). В отличие от них — этот слой ПРОЗРАЧНЫЙ (не красит
-// весь canvas сплошным фоном каждый кадр), потому что он должен просто
-// НАКЛАДЫВАТЬСЯ на пустой фон, а не быть отдельным непрозрачным фоном.
-//
-// z-index — 1, то есть НИЖЕ WebGL-рендерера (2, см. scene.js), а не
-// выше, как было раньше (тогда лучи ложились поверх персонажей — не то,
-// что нужно). WebGL-канвас создаётся с alpha:true и scene.background =
-// null (см. scene.js) — то есть прозрачный ВЕЗДЕ, кроме мест, где
-// реально нарисована непрозрачная 3D-геометрия (персонаж, сам шар,
-// пол). Благодаря этому лучи, положенные слоем НИЖЕ рендерера, видны
-// сквозь прозрачный фон сцены как обычно, но там, где поверх них стоит
-// персонаж — его непрозрачные пиксели рендерера физически перекрывают
-// лучи под собой, ничего специально вычислять/маскировать вручную не
-// нужно.
-//
-// ВАЖНО: слой размытия контура (edgeBlurCanvas, см. main.js) тоже
-// стоит на z-index 1 — но он почти всегда display:none (включается
-// только отдельным ползунком, временная фича), так что практического
-// конфликта нет; если когда-нибудь понадобится включить оба слоя
-// одновременно, придётся развести z-index явно.
-function createBallRays(container) {
-  const canvas = document.createElement("canvas");
-  canvas.style.position = "absolute";
-  canvas.style.inset = "0";
-  canvas.style.width = "100%";
-  canvas.style.height = "100%";
-  canvas.style.zIndex = "1";
-  canvas.style.pointerEvents = "none";
-  canvas.style.display = "none"; // включается вместе с остальным диско-светом через setVisible
-  container.appendChild(canvas);
-
-  const ctx = canvas.getContext("2d");
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  let width = 0;
-  let height = 0;
-
-  function resize() {
-    // getBoundingClientRect() + Math.ceil — та же защита от
-    // субпиксельного зазора, что и в scene.js/soundWave.js/
-    // starTunnel.js (см. подробный комментарий там): обычные
-    // clientWidth/clientHeight округляют к целому, иногда теряя доли
-    // пикселя, которые здесь были бы особенно заметны как щель по краю.
-    const rect = container.getBoundingClientRect();
-    width = Math.ceil(rect.width);
-    height = Math.ceil(rect.height);
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  resize();
-
-  let resizeQueued = false;
-  if (typeof ResizeObserver !== "undefined") {
-    // rAF-throttle — та же причина, что и в остальных canvas-модулях:
-    // ResizeObserver может стрелять чаще, чем реально нужно
-    // перестраивать canvas.
-    const observer = new ResizeObserver(() => {
-      if (resizeQueued) return;
-      resizeQueued = true;
-      requestAnimationFrame(() => {
-        resizeQueued = false;
-        resize();
-      });
-    });
-    observer.observe(container);
-  } else {
-    window.addEventListener("resize", resize);
-  }
-
-  const RAY_COUNT = 14;
-  let angleOffset = 0;
-
-  /**
-   * @param {number} delta - секунды с прошлого кадра
-   * @param {{x: number, y: number} | null} screenPos - проекция позиции
-   *   дискошара на экран в CSS-пикселях контейнера (null, если шар сейчас
-   *   за спиной камеры/вне экрана — тогда просто ничего не рисуем в этом
-   *   кадре)
-   * @param {number} brightness - 0..1, общая яркость лучей (завязана на
-   *   ту же beatPulse-вспышку, что и блики самого шара — лучи должны
-   *   "дышать" в такт тому же самому ритму, не отдельно от шара)
-   * @param {{r:number,g:number,b:number}[]} colors - палитра RAY_COLORS,
-   *   лучи по кругу берут цвет оттуда же, откуда и цветные прожекторы
-   *   персонажа — визуально читается как единая дискотечная подсветка,
-   *   не два независимых набора цветов
-   * @param {number} colorPhase - целое число, медленно растущее со
-   *   временем (см. вызов ниже) — сдвигает, с какого именно цвета
-   *   палитры начинается веер лучей в этом кадре, так весь веер
-   *   постепенно "перекрашивается" по кругу, а не стоит на одном
-   *   статичном наборе цветов всё время, пока играет музыка
-   */
-  function draw(delta, screenPos, brightness, colors, colorPhase) {
-    ctx.clearRect(0, 0, width, height);
-    if (!screenPos) return;
-
-    angleOffset += delta * 0.15; // медленное общее вращение всего веера лучей
-
-    const maxLen = Math.max(width, height) * 0.9;
-
-    // "lighter" — аддитивное смешение (как настоящий свет, а не
-    // непрозрачная краска поверх сцены) — там, где лучи пересекаются
-    // друг с другом или с ярким участком самой 3D-сцены, получается
-    // светлее, а не просто "закрашено сверху".
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    // Лёгкое размытие — раньше лучи были тонкими чёткими линиями, по
-    // просьбе пользователя сделаны мягче. ctx.filter применяется к
-    // каждой фигуре, которую рисуем ПОСЛЕ его установки — то есть и к
-    // самим лучам, и к финальному размытому краю. Радиус небольшой (не
-    // 10+px) — иначе на маленьком экране телефона веер превратился бы
-    // в сплошное цветное пятно без читаемых отдельных лучей.
-    ctx.filter = "blur(3px)";
-
-    for (let i = 0; i < RAY_COUNT; i++) {
-      const angle = angleOffset + (i / RAY_COUNT) * Math.PI * 2;
-      const color = colors[(i + colorPhase) % colors.length];
-      const len = maxLen * (0.55 + 0.45 * Math.sin(i * 2.1 + angleOffset * 3));
-      const dirX = Math.cos(angle);
-      const dirY = Math.sin(angle);
-      const endX = screenPos.x + dirX * len;
-      const endY = screenPos.y + dirY * len;
-
-      // Раньше луч был просто ОДНОЙ линией постоянной толщины (обычный
-      // stroke) — теперь вместо линии рисуем ЗАЛИТУЮ трапецию: узкую у
-      // "дыры" в центре и расширяющуюся к концу луча (см. просьбу
-      // пользователя — "расширяющиеся на пути в конец"), это просто
-      // четырёхугольник вдоль направления луча со сторонами
-      // startWidth/endWidth.
-      const perpX = -dirY;
-      const perpY = dirX;
-      const startWidth = 2 + brightness * 2;
-      const endWidth = 16 + brightness * 14;
-
-      // Раньше лучи начинались ПРЯМО от screenPos с полной силой, плюс
-      // отдельным кругом рисовалась белая "точка" в центре (см. историю
-      // ниже) — по просьбе пользователя вместо яркой сходящейся точки
-      // теперь наоборот: у самого центра лучи почти невидимы (alpha≈0),
-      // яркость нарастает только начиная примерно с 12% длины луча и
-      // достигает пика к ~35% — визуально веер как будто выходит не из
-      // точки, а из тёмного провала ("чёрная дыра"), затем как обычно
-      // гаснет к своему концу.
-      const alpha = 0.2 * brightness; // было 0.34 — по просьбе снизили пиковую видимость лучей (диапазон был ~19-34%, стал ~11-20%)
-      const gradient = ctx.createLinearGradient(screenPos.x, screenPos.y, endX, endY);
-      gradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
-      gradient.addColorStop(0.12, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
-      gradient.addColorStop(0.35, `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`);
-      gradient.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
-
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.moveTo(screenPos.x + perpX * startWidth * 0.5, screenPos.y + perpY * startWidth * 0.5);
-      ctx.lineTo(screenPos.x - perpX * startWidth * 0.5, screenPos.y - perpY * startWidth * 0.5);
-      ctx.lineTo(endX - perpX * endWidth * 0.5, endY - perpY * endWidth * 0.5);
-      ctx.lineTo(endX + perpX * endWidth * 0.5, endY + perpY * endWidth * 0.5);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  function setVisible(value) {
-    canvas.style.display = value ? "block" : "none";
-    if (!value) ctx.clearRect(0, 0, width, height); // не оставляем "замёрзший" кадр лучей висеть под выключенной сценой
-  }
-
-  // Отдаёт уже закэшированный (обновляется через ResizeObserver, не
-  // каждый кадр) размер контейнера в CSS-пикселях — discoLights.js
-  // использует это для перевода 3D→2D проекции шара в координаты
-  // canvas, вместо того чтобы самому ещё раз дёргать
-  // getBoundingClientRect() на каждый кадр рендера.
-  function getSize() {
-    return { width, height };
-  }
-
-  return { draw, setVisible, getSize };
-}
-
-// Палитра лучей в готовом для canvas виде ({r,g,b}) — считаем один раз
-// при создании модуля, не каждый кадр, из тех же DISCO_COLORS, которыми
-// уже подсвечен персонаж.
-const RAY_COLORS = DISCO_COLORS.map((hex) => ({
-  r: (hex >> 16) & 0xff,
-  g: (hex >> 8) & 0xff,
-  b: hex & 0xff,
-}));
-
 /**
  * @param {THREE.Scene} scene
- * @param {HTMLElement} container - тот же #scene-container, куда
- *   scene.js/soundWave.js/starTunnel.js уже кладут свои канвасы —
- *   нужен здесь для canvas-слоя лучей (см. createBallRays).
- * @param {THREE.PerspectiveCamera} camera - нужна, чтобы посчитать, в
- *   какую точку ЭКРАНА (не 3D-сцены) сейчас проецируется дискошар —
- *   лучи рисуются в 2D, поверх готового кадра, не как часть самой
- *   3D-сцены.
  */
-export function createDiscoLights(scene, container, camera) {
+export function createDiscoLights(scene) {
   const discoBall = createDiscoBall(scene);
   const ballLights = createBallLights(scene, discoBall);
-  const ballRays = createBallRays(container);
 
   const fixtures = DISCO_COLORS.map((color, i) => {
     const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
@@ -590,12 +384,10 @@ export function createDiscoLights(scene, container, camera) {
   // быстрой музыке.
   const BALL_PULSE_SMOOTH_TAU = 0.05; // секунды
   let smoothedBallPulse = 0;
-  const BALL_PULSE_STRENGTH = 0.22; // на сколько максимум "раздувается" шар на пике
-
-  // Переиспользуемые объекты — не создаём новый Vector3/объект каждый
-  // кадр только чтобы посчитать экранную проекцию шара для лучей.
-  const projectedPosition = new THREE.Vector3();
-  const screenPos = { x: 0, y: 0 };
+  // Раньше было 0.22 (22% на пике) — по просьбе пользователя убавили,
+  // чтобы не "миллиметровое" еле заметное уменьшение (как было ещё
+  // раньше, до всех этих правок), но и не так сильно, как 0.22.
+  const BALL_PULSE_STRENGTH = 0.09;
 
   /**
    * @param {number} delta - секунды с прошлого кадра
@@ -691,36 +483,12 @@ export function createDiscoLights(scene, container, camera) {
       light.intensity = baseIntensity * flashBoost;
       helper.update(); // SpotLightHelper сам не отслеживает изменения target — без этого вызова проволочный конус остался бы неподвижным
     });
-
-    // --- Лучи вокруг шара (2D-слой поверх сцены, см. createBallRays) ---
-    // Проецируем 3D-позицию шара в экранные (CSS-пиксельные) координаты
-    // контейнера — project() возвращает NDC (-1..1 по обеим осям, где
-    // Y растёт ВВЕРХ), переводим в обычные экранные пиксели (Y растёт
-    // ВНИЗ, как в canvas 2D).
-    projectedPosition.copy(discoBall.position).project(camera);
-    if (projectedPosition.z < 1) {
-      // z >= 1 означает "за задней плоскостью отсечения камеры" — в
-      // норме тут такого не бывает (шар всегда перед камерой), но
-      // проверка дешёвая, а без неё при странных углах камеры лучи
-      // могли бы на мгновение выстрелить в случайную точку экрана.
-      const { width: rayWidth, height: rayHeight } = ballRays.getSize();
-      screenPos.x = ((projectedPosition.x + 1) / 2) * rayWidth;
-      screenPos.y = ((1 - projectedPosition.y) / 2) * rayHeight;
-      // Индекс медленно растёт со временем — веер лучей плавно
-      // "перекрашивается" по кругу палитры, а не стоит на одном
-      // статичном наборе цветов, пока играет музыка.
-      const colorPhase = Math.floor(time * 0.6) % RAY_COLORS.length;
-      ballRays.draw(delta, screenPos, 0.55 + beatPulse * 0.45, RAY_COLORS, colorPhase);
-    } else {
-      ballRays.draw(delta, null, 0, RAY_COLORS, 0);
-    }
   }
 
   /** Включает/выключает разом все прожекторы (и диагностические конусы вместе с ними). */
   function setEnabled(value) {
     enabled = value;
     discoBall.visible = value;
-    ballRays.setVisible(value);
     ballLights.forEach(({ light, helper }) => {
       light.visible = value;
       if (!value) helper.visible = false;
