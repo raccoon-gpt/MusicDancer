@@ -18,7 +18,7 @@ const DISCO_COLORS = [0xff3b6b, 0x3b6bff, 0x3bff9e, 0xffd93b, 0xb83bff, 0x3bdfff
 
 export function createDiscoLights(scene) {
   const fixtures = DISCO_COLORS.map((color, i) => {
-    const light = new THREE.SpotLight(color, 0, 8, Math.PI / 7, 0.5, 1.2);
+    const light = new THREE.SpotLight(color, 0, 8, Math.PI / 4, 0.5, 1.2);
     light.position.set(0, 3.2, 0); // все прожекторы физически висят в одной точке "над сценой" — крутится именно ЦЕЛЬ (target), не сам источник, как в реальном прожекторе на штативе
     light.visible = false; // изначально выключены — включаются только через setEnabled(true)
     scene.add(light);
