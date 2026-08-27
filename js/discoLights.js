@@ -23,8 +23,19 @@ export function createDiscoLights(scene) {
     light.visible = false; // изначально выключены — включаются только через setEnabled(true)
     scene.add(light);
     scene.add(light.target);
+    // ВРЕМЕННО (диагностика "почему в дуэте лучей больше/заметнее") —
+    // видимый проволочный конус прямо в 3D-сцене, показывает РЕАЛЬНУЮ
+    // область, куда светит именно этот прожектор — вместо того чтобы
+    // объяснять числами/гадать, можно увидеть area своими глазами.
+    // Готовый инструмент Three.js, не самописный — SpotLightHelper. Его
+    // нужно вручную обновлять на каждый кадр (update() ниже) — сам он не
+    // отслеживает изменения target/position/angle автоматически.
+    const helper = new THREE.SpotLightHelper(light);
+    helper.visible = false;
+    scene.add(helper);
     return {
       light,
+      helper,
       // Разный стартовый угол (равномерно по кругу) и разная скорость
       // вращения у каждого — специально НЕ одинаковая, иначе все лучи
       // крутились бы синхронно, как одна деталь, а не как хаотичная
@@ -63,7 +74,7 @@ export function createDiscoLights(scene) {
     const baseIntensity = 25 + intensity * 70;
     const flashBoost = 1 + beatPulse * 1.4;
 
-    fixtures.forEach(({ light, baseAngle, speed }) => {
+    fixtures.forEach(({ light, helper, baseAngle, speed }) => {
       const angle = baseAngle + time * speed;
       const radius = 2.4;
       // Цель прожектора описывает круг вокруг персонажа на уровне груди —
@@ -71,14 +82,16 @@ export function createDiscoLights(scene) {
       // groundAndCenterModel.
       light.target.position.set(Math.cos(angle) * radius, 0.9, Math.sin(angle) * radius);
       light.intensity = baseIntensity * flashBoost;
+      helper.update(); // SpotLightHelper сам не отслеживает изменения target — без этого вызова проволочный конус остался бы неподвижным
     });
   }
 
-  /** Включает/выключает разом все прожекторы. */
+  /** Включает/выключает разом все прожекторы (и диагностические конусы вместе с ними). */
   function setEnabled(value) {
     enabled = value;
-    fixtures.forEach(({ light }) => {
+    fixtures.forEach(({ light, helper }) => {
       light.visible = value;
+      helper.visible = value;
     });
     if (!value) beatPulse = 0; // не копим вспышку, пока выключено — иначе при следующем включении был бы неожиданный резкий скачок яркости
   }
