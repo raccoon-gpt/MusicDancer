@@ -64,6 +64,20 @@ const RIG_POSITIONS = [
 const SOLO_CONE_ANGLE = Math.PI / 18;
 const DUET_CONE_ANGLE = Math.PI / 30;
 
+// Высота и масштаб дискошара — РАЗНЫЕ для соло и дуэта (см. setDuetMode
+// ниже), по той же схеме, что и угол конуса прожекторов выше. В дуэте
+// шар остаётся на прежней высоте/размере (это и есть исходные, уже
+// подобранные раньше значения — 1.9 и ×1). В соло шар просят опустить
+// чуть ниже и слегка уменьшить — вероятно, чтобы не перевешивал один
+// маленький персонаж внизу кадра. Переход между режимами — плавный
+// (см. BALL_TRANSITION_SPEED в update()), не мгновенный скачок, чтобы
+// смена состава по ходу танца не дёргала шар резко.
+const DUET_BALL_Y = 1.9;
+const SOLO_BALL_Y = 1.6;
+const DUET_BALL_SCALE = 1;
+const SOLO_BALL_SCALE = 0.85;
+
+
 // --- Разбивка поверхности дискошара на плитки (см. createDiscoBallTextures) ---
 // 30x16 — подобрано на глаз: заметно мельче, чем прежние ~80 граней
 // икосаэдра, но не настолько мелко, чтобы плитки тонули в один общий
@@ -101,11 +115,15 @@ function createDiscoBallTextures() {
 
   for (let row = 0; row < BALL_TILE_ROWS; row++) {
     for (let col = 0; col < BALL_TILE_COLS; col++) {
-      // Оттенок идёт по ДИАГОНАЛИ (col + row), не ровными горизонтальными
-      // полосами — именно так радуга оборачивает шар наискось на
-      // референсах пользователя (картинки 1-2), а не кольцами вдоль
-      // широты.
-      const hue = (((col + row * 1.4) / (BALL_TILE_COLS + BALL_TILE_ROWS * 1.4)) * 360) % 360;
+      // Оттенок — РОВНО ОДИН полный оборот радуги (360°) на всю
+      // окружность шара по col, поэтому col=0 и col=BALL_TILE_COLS
+      // (та же точка, где текстура склеивается сама с собой на сфере)
+      // дают одинаковый цвет — без этого на шве получался резкий скачок
+      // оттенка (пользователь отметил его на скриншоте красной линией).
+      // row добавляет диагональный сдвиг СВЕРХ этого — целые градусы,
+      // не доля общего диапазона, поэтому не ломает саму периодичность
+      // по col.
+      const hue = ((col / BALL_TILE_COLS) * 360 + row * 10) % 360;
       // Небольшой псевдослучайный разброс яркости по плиткам — чтобы
       // мозаика не выглядела идеально гладким градиентом, а читалась
       // именно как отдельные плитки со своим случайным бликом.
@@ -222,16 +240,23 @@ function createDiscoBall(scene) {
 // поверх того, что уже отражается от цветных прожекторов персонажа.
 // Светят СПЕРЕДИ (со стороны камеры), не сзади — иначе видимые блики
 // достались бы задней, невидимой зрителю стороне шара.
+//
+// БАЗОВЫЕ позиции (не меняются) хранятся отдельно от ТЕКУЩИХ — сверху
+// добавляется лёгкое покачивание (см. update() в createDiscoLights),
+// чтобы прожекторы не стояли абсолютно неподвижно, но при этом амплитуда
+// покачивания заведомо маленькая и не опускает луч вниз настолько,
+// чтобы он вообще мог задеть персонажей (те стоят ниже, на y примерно
+// 0..1.5, а источники здесь — от 2.6 и выше).
 function createBallLights(scene, ball) {
-  const positions = [
+  const basePositions = [
     new THREE.Vector3(-1.0, 2.6, 0.4),
     new THREE.Vector3(1.0, 2.6, 0.4),
     new THREE.Vector3(-0.6, 3.0, 0.9),
     new THREE.Vector3(0.6, 3.0, 0.9),
   ];
-  const lights = positions.map((pos) => {
+  const lights = basePositions.map((basePos, i) => {
     const light = new THREE.SpotLight(0xffffff, 0, 6, Math.PI / 14, 0.4, 1.2);
-    light.position.copy(pos);
+    light.position.copy(basePos);
     light.target.position.copy(ball.position);
     light.visible = false; // изначально выключены — включаются вместе с остальным через setEnabled
     scene.add(light);
@@ -242,10 +267,19 @@ function createBallLights(scene, ball) {
     const helper = new THREE.SpotLightHelper(light);
     helper.visible = false;
     scene.add(helper);
-    return { light, helper };
+    return {
+      light,
+      helper,
+      basePos,
+      // Свой случайный фазовый сдвиг у каждого источника — иначе все
+      // четыре покачивались бы синхронно, как одна деталь, а не
+      // независимо друг от друга.
+      phase: Math.random() * Math.PI * 2,
+    };
   });
   return lights;
 }
+
 
 // --- Лучи света вокруг дискошара (2D-канвас поверх сцены) ---
 //
@@ -356,9 +390,19 @@ function createBallRays(container) {
       const endX = screenPos.x + Math.cos(angle) * len;
       const endY = screenPos.y + Math.sin(angle) * len;
 
+      // Раньше лучи начинались ПРЯМО от screenPos с полной силой, плюс
+      // отдельным кругом рисовалась белая "точка" в центре (см. историю
+      // ниже) — по просьбе пользователя вместо яркой сходящейся точки
+      // теперь наоборот: у самого центра лучи почти невидимы (alpha≈0),
+      // яркость нарастает только начиная примерно с 12% длины луча и
+      // достигает пика к ~35% — визуально веер как будто выходит не из
+      // точки, а из тёмного провала ("чёрная дыра"), затем как обычно
+      // гаснет к своему концу.
+      const alpha = 0.34 * brightness;
       const gradient = ctx.createLinearGradient(screenPos.x, screenPos.y, endX, endY);
-      const alpha = 0.32 * brightness;
-      gradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`);
+      gradient.addColorStop(0, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
+      gradient.addColorStop(0.12, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
+      gradient.addColorStop(0.35, `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`);
       gradient.addColorStop(1, `rgba(${color.r}, ${color.g}, ${color.b}, 0)`);
 
       ctx.strokeStyle = gradient;
@@ -368,18 +412,6 @@ function createBallRays(container) {
       ctx.lineTo(endX, endY);
       ctx.stroke();
     }
-
-    // Мягкое общее свечение в самой точке шара поверх лучей — иначе
-    // видно, что все лучи сходятся в геометрическую точку, не в
-    // светящееся ядро.
-    const coreRadius = 46 + brightness * 30;
-    const core = ctx.createRadialGradient(screenPos.x, screenPos.y, 0, screenPos.x, screenPos.y, coreRadius);
-    core.addColorStop(0, `rgba(255,255,255,${0.55 * brightness})`);
-    core.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = core;
-    ctx.beginPath();
-    ctx.arc(screenPos.x, screenPos.y, coreRadius, 0, Math.PI * 2);
-    ctx.fill();
 
     ctx.restore();
   }
@@ -460,6 +492,13 @@ export function createDiscoLights(scene, container, camera) {
   let time = 0;
   let beatPulse = 0; // короткая вспышка яркости на удар, гаснет плавно — тот же принцип, что и в starTunnel.js
 
+  // Целевые высота/масштаб шара для текущего режима (соло/дуэт) — сама
+  // позиция/масштаб плавно "догоняют" эти значения каждый кадр (см.
+  // BALL_TRANSITION_SPEED ниже), не переключаются мгновенно.
+  let targetBallY = DUET_BALL_Y;
+  let targetBallScale = DUET_BALL_SCALE;
+  const BALL_TRANSITION_SPEED = 3; // чем больше — тем быстрее шар "догоняет" целевые высоту/масштаб
+
   // Переиспользуемые объекты — не создаём новый Vector3/объект каждый
   // кадр только чтобы посчитать экранную проекцию шара для лучей.
   const projectedPosition = new THREE.Vector3();
@@ -486,6 +525,15 @@ export function createDiscoLights(scene, container, camera) {
     // одинаково).
     discoBall.rotation.y += 0.4 * delta;
 
+    // Высота/масштаб шара плавно стремятся к целевым значениям текущего
+    // режима (см. setDuetMode) — простая экспоненциальная интерполяция,
+    // тот же принцип, что и smart-камера "плывёт домой" в main.js, а не
+    // резкий скачок на новое значение.
+    const ballEase = 1 - Math.pow(0.02, delta * BALL_TRANSITION_SPEED);
+    discoBall.position.y += (targetBallY - discoBall.position.y) * ballEase;
+    const currentScale = discoBall.scale.x + (targetBallScale - discoBall.scale.x) * ballEase;
+    discoBall.scale.setScalar(currentScale);
+
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
     // комментарий ниже про baseIntensity) — держим её более-менее
@@ -493,10 +541,28 @@ export function createDiscoLights(scene, container, camera) {
     // intensity музыки — шар должен ровно поблёскивать, не мигать
     // резко в такт энергичности момента.
     const ballLightIntensity = 18 * (1 + beatPulse * 0.8);
-    ballLights.forEach(({ light, helper }) => {
+    ballLights.forEach(({ light, helper, basePos, phase }) => {
       light.intensity = ballLightIntensity;
+      // Лёгкое покачивание — амплитуда специально маленькая (0.12/0.05)
+      // и добавляется к УЖЕ высоко расположенной базовой позиции
+      // (basePos.y от 2.6), поэтому даже в нижней точке качания источник
+      // остаётся заметно выше персонажей (те стоят на y примерно
+      // 0..1.5) — покачивание не может довести луч до того, чтобы он
+      // случайно задел персонажа.
+      light.position.set(
+        basePos.x + Math.sin(time * 0.6 + phase) * 0.12,
+        basePos.y + Math.sin(time * 0.9 + phase * 1.3) * 0.05,
+        basePos.z + Math.cos(time * 0.5 + phase) * 0.12
+      );
+      // Цель прожектора следует за ТЕКУЩИМ положением шара (не
+      // копируется один раз при создании) — раньше это было не важно,
+      // потому что шар всегда стоял на одной и той же высоте, но теперь
+      // (см. соло/дуэт выше) шар может смещаться и менять размер, а
+      // прожектор должен продолжать целиться именно в него.
+      light.target.position.copy(discoBall.position);
       helper.update(); // та же причина, что и у хелперов персонажа — сам не отслеживает изменения target/angle
     });
+
 
     // ВАЖНО: числа яркости здесь НАМНОГО больше, чем у key/rim-света в
     // scene.js (там 1.6/0.4) — это не опечатка. В Three.js 0.160.0 по
@@ -581,13 +647,19 @@ export function createDiscoLights(scene, container, camera) {
   }
 
   /** Переключает угол конуса всех прожекторов между соло/дуэт-значениями
-   * (см. SOLO_CONE_ANGLE/DUET_CONE_ANGLE выше) — вызывается из main.js
-   * при каждой смене состава активных персонажей. */
+   * (см. SOLO_CONE_ANGLE/DUET_CONE_ANGLE выше), а также целевые
+   * высоту/масштаб дискошара (см. DUET_BALL_Y/SOLO_BALL_Y и парные им
+   * SCALE-константы) — вызывается из main.js при каждой смене состава
+   * активных персонажей. Сам шар не прыгает мгновенно на новые
+   * значения — просто плавно "догоняет" их каждый кадр в update().
+   */
   function setDuetMode(isDuet) {
     const angle = isDuet ? DUET_CONE_ANGLE : SOLO_CONE_ANGLE;
     fixtures.forEach(({ light }) => {
       light.angle = angle;
     });
+    targetBallY = isDuet ? DUET_BALL_Y : SOLO_BALL_Y;
+    targetBallScale = isDuet ? DUET_BALL_SCALE : SOLO_BALL_SCALE;
   }
 
   return { update, setEnabled, setHelpersVisible, setDuetMode };
