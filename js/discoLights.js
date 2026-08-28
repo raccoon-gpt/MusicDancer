@@ -463,9 +463,9 @@ function createBallStarBurst(container) {
       const alpha = fadeIn * fadeOut;
       if (alpha <= 0.01) continue; // не тратим fillStyle/arc на практически невидимые звёзды
 
-      const size = Math.max(0.6, progress * (2.4 + treble * 3));
-      const brightness = Math.min(1, 0.3 + progress * 0.8 + bass * 0.25 + beatFlicker * 0.5) * alpha;
-      ctx.fillStyle = `hsla(${star.hue}, 85%, ${55 + brightness * 25}%, ${brightness})`;
+      const size = Math.max(0.6, progress * (2.2 + treble * 3));
+      const brightness = Math.min(1, 0.25 + progress * 0.9 + bass * 0.25 + beatFlicker * 0.5) * alpha;
+      ctx.fillStyle = `hsla(${star.hue}, 75%, ${55 + brightness * 30}%, ${brightness})`;
       ctx.beginPath();
       ctx.arc(x, y, size, 0, Math.PI * 2);
       ctx.fill();
