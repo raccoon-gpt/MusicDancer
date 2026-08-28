@@ -401,6 +401,15 @@ function createBallStarBurst(container) {
   // (не сразу при создании, как в starTunnel.js) — сейчас ещё не
   // известен реальный радиус шара на экране (origin.radiusPx появляется
   // только на первом вызове update(), когда камера/шар уже точно готовы).
+  // ВРЕМЕННО (по просьбе пользователя — "хочу попробовать без
+  // ограничительного радиуса") — переключатель поведения. true — звёзды
+  // летят по всей сцене, как в оригинальном звёздном туннеле (граница —
+  // край экрана, без фейда, прямая копия механики starTunnel.js). false
+  // — прежнее поведение (ограничение BALL_STAR_RADIUS_MULTIPLIER×радиус
+  // шара + плавный фейд у границы). Один флаг — просто верните false,
+  // чтобы откатить обратно, ничего больше менять не нужно.
+  const BALL_STAR_UNLIMITED_RADIUS = true;
+
   let initialized = false;
 
   let beatPulse = 0; // "рывок" скорости на сильный удар — та же механика, что и в starTunnel.js
@@ -412,7 +421,7 @@ function createBallStarBurst(container) {
    * @param {boolean} strongBeat
    * @param {boolean} beat
    * @param {number} riseRate
-   * @param {{x:number, y:number, radiusPx:number}|null} origin - экранные координаты точки вылета (центр шара) и предельный радиус разлёта в пикселях (уже с учётом BALL_STAR_RADIUS_MULTIPLIER, см. createDiscoLights); null — шар сейчас за камерой/сцена не готова, в этом кадре просто ничего не рисуем
+   * @param {{x:number, y:number, radiusPx:number}|null} origin - экранные координаты точки вылета (центр шара) и предельный радиус разлёта в пикселях (уже с учётом BALL_STAR_RADIUS_MULTIPLIER, см. createDiscoLights) — используется как есть только при BALL_STAR_UNLIMITED_RADIUS=false, иначе радиус пересчитывается тут же, по размеру экрана, как в starTunnel.js; null — шар сейчас за камерой/сцена не готова, в этом кадре просто ничего не рисуем
    */
   function update(delta, features, strongBeat, beat, riseRate, origin) {
     if (canvas.style.display === "none") return; // не тратим ресурсы на кадры, которые всё равно не видны
@@ -420,9 +429,14 @@ function createBallStarBurst(container) {
     ctx.clearRect(0, 0, width, height); // ПРОЗРАЧНЫЙ слой — накладка поверх сцены, не самостоятельный фон (в отличие от starTunnel.js)
     if (!origin) return;
 
+    // При BALL_STAR_UNLIMITED_RADIUS — тот же расчёт предельного
+    // расстояния, что и в starTunnel.js (maxZ * 0.62-масштаб радиуса,
+    // см. оригинал) — граница экрана, а не радиус шара.
+    const maxRadiusPx = BALL_STAR_UNLIMITED_RADIUS ? Math.max(width, height) * 0.75 * 0.62 : origin.radiusPx;
+
     if (!initialized) {
       initialized = true;
-      for (const star of stars) star.radius = Math.random() * origin.radiusPx;
+      for (const star of stars) star.radius = Math.random() * maxRadiusPx;
     }
 
     const volume = features?.volume ?? 0;
@@ -441,7 +455,7 @@ function createBallStarBurst(container) {
     // origin.radiusPx каждый кадр может быть разным).
     const baseSpeedFraction = 0.5 + volume * 2.4 + riseBoost * 1.5;
     const speedFraction = baseSpeedFraction * (1 + beatPulse * 2.2);
-    const speed = speedFraction * origin.radiusPx; // px/сек
+    const speed = speedFraction * maxRadiusPx; // px/сек
 
     const FADE_IN_END = 0.08; // доля радиуса, за которую звезда успевает появиться из полной прозрачности — без этого рождение прямо у поверхности шара выглядело бы резким "попом"
     const FADE_OUT_START = 0.72; // доля радиуса, с которой начинается угасание к границе — по просьбе пользователя "приглушать эти звёзды фейдом при достижении радиуса"
@@ -449,7 +463,7 @@ function createBallStarBurst(container) {
     for (const star of stars) {
       const prevRadius = star.radius; // ДО обновления — нужно для хвоста ниже, как prevZ в starTunnel.js
       star.radius += speed * star.speedJitter * delta;
-      const progress = star.radius / origin.radiusPx;
+      const progress = star.radius / maxRadiusPx;
       if (progress >= 1) {
         resetStar(star);
         continue;
@@ -458,8 +472,24 @@ function createBallStarBurst(container) {
       const x = origin.x + Math.cos(star.angle) * star.radius;
       const y = origin.y + Math.sin(star.angle) * star.radius;
 
-      const fadeIn = Math.min(1, progress / FADE_IN_END);
-      const fadeOut = progress > FADE_OUT_START ? 1 - (progress - FADE_OUT_START) / (1 - FADE_OUT_START) : 1;
+      // Дополнительная граница по краю ЭКРАНА (не только по радиусу) —
+      // та же самая проверка, что и в starTunnel.js, актуальна только
+      // при BALL_STAR_UNLIMITED_RADIUS: там maxRadiusPx — лишь ПРИМЕРНАЯ
+      // оценка (тот же 0.62-коэффициент из оригинала), звезда может уйти
+      // за пределы видимой области чуть раньше/позже по одной оси, чем
+      // по другой (экран редко строго квадратный).
+      if (BALL_STAR_UNLIMITED_RADIUS && (x < -20 || x > width + 20 || y < -20 || y > height + 20)) {
+        resetStar(star);
+        continue;
+      }
+
+      // Фейд у границы — ТОЛЬКО в ограниченном режиме (см. просьбу
+      // пользователя изначально). В unlimited-режиме звёзды просто
+      // резко пересоздаются за краем экрана, как в оригинале — там
+      // фейд не нужен, потому что зритель и не видит момент "пересборки"
+      // за пределами видимой области.
+      const fadeIn = BALL_STAR_UNLIMITED_RADIUS ? 1 : Math.min(1, progress / FADE_IN_END);
+      const fadeOut = BALL_STAR_UNLIMITED_RADIUS ? 1 : progress > FADE_OUT_START ? 1 - (progress - FADE_OUT_START) / (1 - FADE_OUT_START) : 1;
       const alpha = fadeIn * fadeOut;
       if (alpha <= 0.01) continue; // не тратим fillStyle/arc на практически невидимые звёзды
 
