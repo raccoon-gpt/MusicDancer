@@ -447,6 +447,7 @@ function createBallStarBurst(container) {
     const FADE_OUT_START = 0.72; // доля радиуса, с которой начинается угасание к границе — по просьбе пользователя "приглушать эти звёзды фейдом при достижении радиуса"
 
     for (const star of stars) {
+      const prevRadius = star.radius; // ДО обновления — нужно для хвоста ниже, как prevZ в starTunnel.js
       star.radius += speed * star.speedJitter * delta;
       const progress = star.radius / origin.radiusPx;
       if (progress >= 1) {
@@ -468,6 +469,22 @@ function createBallStarBurst(container) {
       ctx.beginPath();
       ctx.arc(x, y, size, 0, Math.PI * 2);
       ctx.fill();
+
+      // Хвост — та же самая деталь, что и в starTunnel.js (см. историю
+      // правок: изначально была упущена при клонировании — короткая
+      // линия от предыдущей позиции звезды до текущей, заметна только у
+      // уже далеко улетевших звёзд (progress > 0.35), усиливает
+      // ощущение скорости именно там, где это заметнее.
+      if (progress > 0.35) {
+        const prevX = origin.x + Math.cos(star.angle) * prevRadius;
+        const prevY = origin.y + Math.sin(star.angle) * prevRadius;
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = size * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(prevX, prevY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
     }
   }
 
