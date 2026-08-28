@@ -71,18 +71,17 @@ const RIG_POSITIONS = [
 const SOLO_CONE_ANGLE = Math.PI / 18;
 const DUET_CONE_ANGLE = Math.PI / 30;
 
-// Высота и масштаб дискошара — РАЗНЫЕ для соло и дуэта (см. setDuetMode
-// ниже), по той же схеме, что и угол конуса прожекторов выше. В дуэте
-// шар остаётся на прежней высоте/размере (это и есть исходные, уже
-// подобранные раньше значения — 1.9 и ×1). В соло шар просят опустить
-// чуть ниже и слегка уменьшить — вероятно, чтобы не перевешивал один
-// маленький персонаж внизу кадра. Переход между режимами — плавный
-// (см. BALL_TRANSITION_SPEED в update()), не мгновенный скачок, чтобы
-// смена состава по ходу танца не дёргала шар резко.
-const DUET_BALL_Y = 1.9;
-const SOLO_BALL_Y = 1.6;
-const DUET_BALL_SCALE = 1;
-const SOLO_BALL_SCALE = 0.85;
+// Высота, глубина (Z) и масштаб дискошара — раньше были РАЗНЫЕ для
+// соло/дуэта (был плавный переход между ними). По итогам ручной
+// калибровки через временную панель (см. историю правок) пользователь
+// подобрал ОДНО общее положение, которое устроило и для соло, и для
+// дуэта — вся система перехода (targetBallY/baseBallScale/
+// BALL_TRANSITION_SPEED) убрана вместе с разницей, теперь просто
+// фиксированные константы, setDuetMode позицию/масштаб шара больше не
+// трогает (только угол конуса прожекторов).
+const BALL_Y = 1.45;
+const BALL_Z = -1.3;
+const BALL_SCALE = 0.75;
 
 // Соответствует SphereGeometry(1.1, ...) в createDiscoBall — вынесена
 // отдельной константой, используется в самой геометрии шара.
@@ -222,13 +221,10 @@ function createDiscoBallTextures() {
 // выше) — пользователь явно попросил радужный вид, как на референсах,
 // а не чистый хром.
 //
-// Стартовая высота/масштаб — СРАЗУ соло-значения (SOLO_BALL_Y/
-// SOLO_BALL_SCALE), не дуэтные — по умолчанию сайт открывается с одной
-// белкой (соло), поэтому именно это должно быть видно сразу, без
-// "прыжка" из дуэтного положения в соло на первом кадре. Плавный
-// переход в дуэт (если пользователь позовёт второго персонажа)
-// по-прежнему считается в update() — см. targetBallY/targetBallScale в
-// createDiscoLights.
+// Стартовая высота/глубина/масштаб — единое положение шара, подобранное
+// вручную через временную панель калибровки (см. историю правок,
+// BALL_Y/BALL_Z/BALL_SCALE выше) — одинаковое и для соло, и для дуэта,
+// никакого перехода между режимами тут больше нет.
 function createDiscoBall(scene) {
   const geometry = new THREE.SphereGeometry(BALL_BASE_RADIUS, 64, 48);
   const { colorMap, normalMap } = createDiscoBallTextures();
@@ -240,10 +236,8 @@ function createDiscoBall(scene) {
     roughness: 0.25,
   });
   const ball = new THREE.Mesh(geometry, material);
-  // X/Z — как раньше (0, -1.3, позади персонажа). Y — соло-высота по
-  // умолчанию (см. комментарий выше), не прежняя дуэтная 1.9.
-  ball.position.set(0, SOLO_BALL_Y, -1.3);
-  ball.scale.setScalar(SOLO_BALL_SCALE);
+  ball.position.set(0, BALL_Y, BALL_Z);
+  ball.scale.setScalar(BALL_SCALE);
   ball.visible = false; // изначально выключен — включается вместе с прожекторами через setEnabled
   scene.add(ball);
   return ball;
@@ -341,27 +335,6 @@ export function createDiscoLights(scene) {
   let time = 0;
   let beatPulse = 0; // короткая вспышка яркости на удар, гаснет плавно — тот же принцип, что и в starTunnel.js
 
-  // Целевые высота/масштаб шара для текущего режима (соло/дуэт) — сама
-  // позиция/масштаб плавно "догоняют" эти значения каждый кадр (см.
-  // BALL_TRANSITION_SPEED ниже), не переключаются мгновенно. Стартуют
-  // именно с соло-значений — см. комментарий в createDiscoBall выше,
-  // почему шар и создаётся сразу в соло-положении: main.js вызовет
-  // setDuetMode(true) сам, как только (и если) на сцене появится второй
-  // персонаж, тогда эти цели поменяются и шар плавно перейдёт в дуэт.
-  let targetBallY = SOLO_BALL_Y;
-  let targetBallScale = SOLO_BALL_SCALE;
-  const BALL_TRANSITION_SPEED = 3; // чем больше — тем быстрее шар "догоняет" целевые высоту/масштаб
-
-  // "Базовый" масштаб (без пульсации, см. ниже) — храним ОТДЕЛЬНО от
-  // discoBall.scale.x. Если бы пульсацию просто умножали и сразу
-  // записывали обратно в discoBall.scale, то на следующем кадре
-  // интерполяция к targetBallScale отталкивалась бы уже от
-  // "запульсировавшего" значения, а не от чистого — пульсация подмешалась
-  // бы в сам переход соло/дуэт и он полз бы неровно. Так база и
-  // пульсация независимы: сначала база плавно идёт к targetBallScale,
-  // потом поверх неё домножается текущая пульсация.
-  let baseBallScale = SOLO_BALL_SCALE;
-
   // Пульсация шара — ЧЕТВЁРТАЯ попытка (см. историю правок): через mid
   // не получилось (гейн от абсолютного значения упирался в потолок);
   // через "всплеск относительно недавней базы" не попадало в такт;
@@ -416,19 +389,6 @@ export function createDiscoLights(scene) {
   let ballPulseCurrent = 1; // фактический множитель масштаба ПРЯМО СЕЙЧАС — плавно "механически" догоняет ballPulseTarget
   let ballPulseHoldTimer = 0; // сколько ещё секунд держим цель внизу, прежде чем отпустить обратно к 1
 
-  // ВРЕМЕННО (по просьбе пользователя — панель калибровки позиции/
-  // размера шара в main.js) — когда задан, ПОЛНОСТЬЮ перекрывает
-  // автоматическую логику позиции/масштаба шара ниже (соло/дуэт-переход,
-  // пульсацию под удар) — прямое ручное значение, чтобы на панели были
-  // видны точные подобранные цифры, без "дрожания" от пульса поверх них.
-  // null — обычная автоматика (как было всегда), см. использование в
-  // update() ниже.
-  let manualOverride = null;
-  /** @param {{y:number, z:number, scale:number}|null} values */
-  function setManualBallOverride(values) {
-    manualOverride = values;
-  }
-
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
@@ -465,26 +425,12 @@ export function createDiscoLights(scene) {
     // одинаково).
     discoBall.rotation.y += 0.4 * delta;
 
-    // Высота/масштаб шара плавно стремятся к целевым значениям текущего
-    // режима (см. setDuetMode) — простая экспоненциальная интерполяция,
-    // тот же принцип, что и smart-камера "плывёт домой" в main.js, а не
-    // резкий скачок на новое значение. Пульсация (см. выше) накладывается
-    // уже ПОСЛЕ этого, как отдельный множитель поверх базового масштаба —
-    // см. комментарий у baseBallScale.
-    const ballEase = 1 - Math.pow(0.02, delta * BALL_TRANSITION_SPEED);
-    discoBall.position.y += (targetBallY - discoBall.position.y) * ballEase;
-    baseBallScale += (targetBallScale - baseBallScale) * ballEase;
-    discoBall.scale.setScalar(baseBallScale * ballPulseCurrent);
-
-    // ВРЕМЕННО (см. setManualBallOverride выше) — если задан ручной
-    // override, ставим точные значения ПОСЛЕ автоматики, перекрывая её —
-    // так на панели калибровки видны ровно те цифры, что реально
-    // применены к шару, без искажения от пульса/переходов поверх.
-    if (manualOverride) {
-      discoBall.position.y = manualOverride.y;
-      discoBall.position.z = manualOverride.z;
-      discoBall.scale.setScalar(manualOverride.scale);
-    }
+    // Высота/позиция шара — фиксированная (BALL_Y/BALL_Z, единая для
+    // соло и дуэта, см. историю правок выше), никакого перехода между
+    // режимами больше нет. Масштаб — тоже фиксированная база
+    // (BALL_SCALE), пульсация (см. выше) накладывается уже ПОСЛЕ нее,
+    // как отдельный множитель поверх.
+    discoBall.scale.setScalar(BALL_SCALE * ballPulseCurrent);
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
@@ -575,20 +521,18 @@ export function createDiscoLights(scene) {
   }
 
   /** Переключает угол конуса всех прожекторов между соло/дуэт-значениями
-   * (см. SOLO_CONE_ANGLE/DUET_CONE_ANGLE выше), а также целевые
-   * высоту/масштаб дискошара (см. DUET_BALL_Y/SOLO_BALL_Y и парные им
-   * SCALE-константы) — вызывается из main.js при каждой смене состава
-   * активных персонажей. Сам шар не прыгает мгновенно на новые
-   * значения — просто плавно "догоняет" их каждый кадр в update().
+   * (см. SOLO_CONE_ANGLE/DUET_CONE_ANGLE выше) — вызывается из main.js
+   * при каждой смене состава активных персонажей. Позицию/масштаб шара
+   * больше не трогает — с тех пор, как пользователь подобрал единое
+   * положение для обоих режимов (см. BALL_Y/BALL_Z/BALL_SCALE выше),
+   * разницы между соло и дуэтом для самого шара не осталось.
    */
   function setDuetMode(isDuet) {
     const angle = isDuet ? DUET_CONE_ANGLE : SOLO_CONE_ANGLE;
     fixtures.forEach(({ light }) => {
       light.angle = angle;
     });
-    targetBallY = isDuet ? DUET_BALL_Y : SOLO_BALL_Y;
-    targetBallScale = isDuet ? DUET_BALL_SCALE : SOLO_BALL_SCALE;
   }
 
-  return { update, setEnabled, setHelpersVisible, setDuetMode, setManualBallOverride };
+  return { update, setEnabled, setHelpersVisible, setDuetMode };
 }
