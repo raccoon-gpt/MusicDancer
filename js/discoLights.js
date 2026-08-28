@@ -40,7 +40,20 @@
  * ищи в истории версий файла (был проекцией позиции шара на экран через
  * camera.project() + градиентные "лепестки" веером, рисовался в
  * отдельном <canvas>).
-
+ *
+ * ЧЕТВЁРТЫЙ РАУНД ПРАВОК — звёздный "взрыв" из-за шара (см.
+ * createBallStarBurst ниже). Пользователю понравился звёздный туннель
+ * (starTunnel.js — полноэкранный фоновый визуализатор, разлетающиеся
+ * точки от центра наружу) и он попросил ТОЧНО ТАКОЙ ЖЕ эффект, но
+ * ОТДЕЛЬНЫЙ экземпляр: точка вылета — из-за шара (проекция его центра
+ * на экран), цвета — радужные (тема самого шара), и ограниченный
+ * радиусом (вдвое больше видимого размера шара) с фейдом на подлёте к
+ * границе — вместо того чтобы лететь до краёв всего экрана, как
+ * оригинальный туннель. Технически — тот же принцип 2D-canvas + проекция
+ * 3D-позиции шара на экран, что был у убранных лучей (см. выше), только
+ * ПОД сценой (z-index 1, не 3) — чтобы сам шар (непрозрачная 3D-
+ * геометрия) перекрывал звёзды в точке их рождения, и они становились
+ * видны только когда "вылетают" из-за его силуэта наружу.
  */
 
 import * as THREE from "three";
@@ -78,6 +91,15 @@ const DUET_BALL_Y = 1.9;
 const SOLO_BALL_Y = 1.6;
 const DUET_BALL_SCALE = 1;
 const SOLO_BALL_SCALE = 0.85;
+
+// Соответствует SphereGeometry(1.1, ...) в createDiscoBall — нужен
+// отдельной константой, чтобы createBallStarBurst (через
+// computeBallScreenOrigin в createDiscoLights) мог посчитать реальный
+// видимый на экране радиус шара, не заглядывая в геометрию напрямую.
+const BALL_BASE_RADIUS = 1.1;
+// "Вдвое больше шара" — прямая цифра из просьбы пользователя, вынесена
+// отдельной константой, если понадобится подправить.
+const BALL_STAR_RADIUS_MULTIPLIER = 2;
 
 
 // --- Разбивка поверхности дискошара на плитки (см. createDiscoBallTextures) ---
@@ -221,7 +243,7 @@ function createDiscoBallTextures() {
 // по-прежнему считается в update() — см. targetBallY/targetBallScale в
 // createDiscoLights.
 function createDiscoBall(scene) {
-  const geometry = new THREE.SphereGeometry(1.1, 64, 48);
+  const geometry = new THREE.SphereGeometry(BALL_BASE_RADIUS, 64, 48);
   const { colorMap, normalMap } = createDiscoBallTextures();
   const material = new THREE.MeshStandardMaterial({
     map: colorMap,
@@ -290,12 +312,194 @@ function createBallLights(scene, ball) {
   return lights;
 }
 
+// --- Звёздный "взрыв" из-за шара (2D-канвас ПОД сценой) ---
+//
+// Клон starTunnel.js (см. подробное объяснение в истории правок выше) —
+// та же самая механика "точки разлетаются от центра наружу с реакцией
+// на музыку", но:
+//  - точка вылета НЕ центр экрана, а проекция ЦЕНТРА ШАРА (см.
+//    computeBallScreenOrigin в createDiscoLights ниже);
+//  - цвета — полная радуга (та же тема, что и у самого шара, см.
+//    createDiscoBallTextures), а не холодная сине-фиолетовая гамма
+//    оригинала;
+//  - звёзды НЕ летят до краёв экрана — ограничены радиусом (передаётся
+//    каждый кадр через origin.radiusPx, см. update ниже) и ПЛАВНО гаснут
+//    (fade), не долетая до границы, вместо резкого
+//    исчезновения/пересоздания у края экрана, как в оригинале;
+//  - слой ПРОЗРАЧНЫЙ (clearRect, не solid fillRect каждый кадр, как у
+//    полноэкранного туннеля) — это накладка поверх уже отрисованной
+//    сцены, а не самостоятельный фон.
+function createBallStarBurst(container) {
+  const canvas = document.createElement("canvas");
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  // z-index 1 — НИЖЕ WebGL-рендерера (2, см. scene.js), та же причина,
+  // что была у убранных лучей (см. история выше): рендерер прозрачен
+  // везде, кроме реально нарисованной 3D-геометрии, поэтому шар
+  // физически перекрывает звёзды в точке их рождения — видны только
+  // "вылетевшие" из-за его силуэта.
+  canvas.style.zIndex = "1";
+  canvas.style.pointerEvents = "none";
+  canvas.style.display = "none"; // включается вместе с остальным диско-светом через setVisible
+  container.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let width = 0;
+  let height = 0;
+
+  function resize() {
+    // getBoundingClientRect() + Math.ceil — та же защита от
+    // субпиксельного зазора, что и в остальных canvas-модулях (см.
+    // подробный комментарий в scene.js/soundWave.js/starTunnel.js).
+    const rect = container.getBoundingClientRect();
+    width = Math.ceil(rect.width);
+    height = Math.ceil(rect.height);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+
+  if (typeof ResizeObserver !== "undefined") {
+    let resizeRafPending = false;
+    const throttledResize = () => {
+      if (resizeRafPending) return;
+      resizeRafPending = true;
+      requestAnimationFrame(() => {
+        resizeRafPending = false;
+        resize();
+      });
+    };
+    new ResizeObserver(throttledResize).observe(container);
+  }
+
+  // Меньше, чем у звёздного туннеля (260) — площадь на порядок меньше
+  // (ограничена радиусом шара, не всем экраном), больше точек тут
+  // выглядело бы избыточно тесно.
+  const STAR_COUNT = 140;
+  const stars = [];
+
+  /** Пересоздаёт одну звезду — новый случайный угол и обнулённый радиус
+   * (звезда "рождается" прямо у поверхности шара). */
+  function resetStar(star) {
+    star.angle = Math.random() * Math.PI * 2;
+    star.radius = 0; // в ПИКСЕЛЯХ (не доля 0..1, как angle/hue) — растёт каждый кадр в update()
+    star.speedJitter = 0.7 + Math.random() * 0.6;
+    star.hue = Math.random() * 360; // полная радуга — та же тема, что и у самого шара (тот тоже честная радуга по всей поверхности)
+  }
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const star = {};
+    resetStar(star);
+    stars.push(star);
+  }
+  // Распределяем по всей "трубе" при самом первом реальном кадре (не
+  // все рождаются в одной точке разом) — иначе первые секунды выглядели
+  // бы как "внезапный залп", а не устоявшийся поток. Делается ОТЛОЖЕННО
+  // (не сразу при создании, как в starTunnel.js) — сейчас ещё не
+  // известен реальный радиус шара на экране (origin.radiusPx появляется
+  // только на первом вызове update(), когда камера/шар уже точно готовы).
+  let initialized = false;
+
+  let beatPulse = 0; // "рывок" скорости на сильный удар — та же механика, что и в starTunnel.js
+  let beatFlicker = 0; // мерцание яркости на обычный удар — та же механика, что и в starTunnel.js
+
+  /**
+   * @param {number} delta - секунды с прошлого кадра
+   * @param {{volume:number, bass:number, mid:number, treble:number}|null} features
+   * @param {boolean} strongBeat
+   * @param {boolean} beat
+   * @param {number} riseRate
+   * @param {{x:number, y:number, radiusPx:number}|null} origin - экранные координаты точки вылета (центр шара) и предельный радиус разлёта в пикселях (уже с учётом BALL_STAR_RADIUS_MULTIPLIER, см. createDiscoLights); null — шар сейчас за камерой/сцена не готова, в этом кадре просто ничего не рисуем
+   */
+  function update(delta, features, strongBeat, beat, riseRate, origin) {
+    if (canvas.style.display === "none") return; // не тратим ресурсы на кадры, которые всё равно не видны
+
+    ctx.clearRect(0, 0, width, height); // ПРОЗРАЧНЫЙ слой — накладка поверх сцены, не самостоятельный фон (в отличие от starTunnel.js)
+    if (!origin) return;
+
+    if (!initialized) {
+      initialized = true;
+      for (const star of stars) star.radius = Math.random() * origin.radiusPx;
+    }
+
+    const volume = features?.volume ?? 0;
+    const bass = features?.bass ?? 0;
+    const treble = features?.treble ?? 0;
+
+    if (strongBeat) beatPulse = 1;
+    beatPulse *= Math.pow(0.015, delta);
+    if (beat) beatFlicker = 1;
+    beatFlicker *= Math.pow(0.0005, delta);
+
+    const riseBoost = Math.min(1, riseRate * 0.6);
+    // Скорость выражена в ДОЛЯХ РАДИУСА в секунду, не в пикселях
+    // напрямую — так поведение остаётся одинаковым независимо от
+    // текущего видимого размера шара (соло/дуэт, пульсация от удара —
+    // origin.radiusPx каждый кадр может быть разным).
+    const baseSpeedFraction = 0.5 + volume * 2.4 + riseBoost * 1.5;
+    const speedFraction = baseSpeedFraction * (1 + beatPulse * 2.2);
+    const speed = speedFraction * origin.radiusPx; // px/сек
+
+    const FADE_IN_END = 0.08; // доля радиуса, за которую звезда успевает появиться из полной прозрачности — без этого рождение прямо у поверхности шара выглядело бы резким "попом"
+    const FADE_OUT_START = 0.72; // доля радиуса, с которой начинается угасание к границе — по просьбе пользователя "приглушать эти звёзды фейдом при достижении радиуса"
+
+    for (const star of stars) {
+      star.radius += speed * star.speedJitter * delta;
+      const progress = star.radius / origin.radiusPx;
+      if (progress >= 1) {
+        resetStar(star);
+        continue;
+      }
+
+      const x = origin.x + Math.cos(star.angle) * star.radius;
+      const y = origin.y + Math.sin(star.angle) * star.radius;
+
+      const fadeIn = Math.min(1, progress / FADE_IN_END);
+      const fadeOut = progress > FADE_OUT_START ? 1 - (progress - FADE_OUT_START) / (1 - FADE_OUT_START) : 1;
+      const alpha = fadeIn * fadeOut;
+      if (alpha <= 0.01) continue; // не тратим fillStyle/arc на практически невидимые звёзды
+
+      const size = Math.max(0.6, progress * (2.4 + treble * 3));
+      const brightness = Math.min(1, 0.3 + progress * 0.8 + bass * 0.25 + beatFlicker * 0.5) * alpha;
+      ctx.fillStyle = `hsla(${star.hue}, 85%, ${55 + brightness * 25}%, ${brightness})`;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function setVisible(visible) {
+    canvas.style.display = visible ? "block" : "none";
+    if (!visible) ctx.clearRect(0, 0, width, height); // не оставляем "замёрзший" кадр висеть под выключенной сценой
+  }
+
+  // Отдаёт уже закэшированный (обновляется через ResizeObserver, не
+  // каждый кадр) размер контейнера — createDiscoLights использует это
+  // для перевода 3D→2D проекции шара в координаты canvas, вместо того
+  // чтобы самому ещё раз дёргать getBoundingClientRect() каждый кадр.
+  function getSize() {
+    return { width, height };
+  }
+
+  return { update, setVisible, getSize };
+}
+
 /**
  * @param {THREE.Scene} scene
+ * @param {HTMLElement} container - нужен для canvas-слоя звёздного
+ *   взрыва (см. createBallStarBurst).
+ * @param {THREE.PerspectiveCamera} camera - нужна, чтобы посчитать, в
+ *   какую точку ЭКРАНА (не 3D-сцены) сейчас проецируется дискошар, и
+ *   какой у него видимый на экране радиус — звёзды рисуются в 2D,
+ *   поверх/под готовым кадром, не как часть самой 3D-сцены.
  */
-export function createDiscoLights(scene) {
+export function createDiscoLights(scene, container, camera) {
   const discoBall = createDiscoBall(scene);
   const ballLights = createBallLights(scene, discoBall);
+  const ballStarBurst = createBallStarBurst(container);
 
   const fixtures = DISCO_COLORS.map((color, i) => {
     const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
@@ -407,6 +611,45 @@ export function createDiscoLights(scene) {
   let ballPulseCurrent = 1; // фактический множитель масштаба ПРЯМО СЕЙЧАС — плавно "механически" догоняет ballPulseTarget
   let ballPulseHoldTimer = 0; // сколько ещё секунд держим цель внизу, прежде чем отпустить обратно к 1
 
+  // Переиспользуемые объекты для computeBallScreenOrigin ниже — не
+  // создаём новый Vector3 каждый кадр только чтобы посчитать проекцию
+  // шара на экран для звёздного взрыва.
+  const projectedCenter = new THREE.Vector3();
+  const projectedEdge = new THREE.Vector3();
+  const edgeWorldPoint = new THREE.Vector3();
+  const cameraRightVector = new THREE.Vector3();
+
+  /**
+   * Считает экранные координаты центра шара и его видимый на экране
+   * радиус (в пикселях) — нужно для звёздного взрыва (см.
+   * createBallStarBurst), который рисуется в 2D поверх готового кадра,
+   * не как часть самой 3D-сцены. Видимый радиус получаем не приближённо
+   * (например, через расстояние до камеры), а честной проекцией ДВУХ
+   * точек — центра шара и точки на его экваторе (сдвиг на
+   * BALL_BASE_RADIUS×текущий масштаб вдоль "вправо" от камеры) — так
+   * автоматически учитывается перспектива, а не только расстояние.
+   * @returns {{x:number, y:number, radiusPx:number}|null} null — шар за
+   *   задней плоскостью отсечения камеры (в норме не бывает, но
+   *   проверка дешёвая)
+   */
+  function computeBallScreenOrigin() {
+    projectedCenter.copy(discoBall.position).project(camera);
+    if (projectedCenter.z >= 1) return null;
+
+    cameraRightVector.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    edgeWorldPoint.copy(discoBall.position).addScaledVector(cameraRightVector, discoBall.scale.x * BALL_BASE_RADIUS);
+    projectedEdge.copy(edgeWorldPoint).project(camera);
+
+    const { width, height } = ballStarBurst.getSize();
+    const centerX = ((projectedCenter.x + 1) / 2) * width;
+    const centerY = ((1 - projectedCenter.y) / 2) * height;
+    const edgeX = ((projectedEdge.x + 1) / 2) * width;
+    const edgeY = ((1 - projectedEdge.y) / 2) * height;
+    const ballScreenRadiusPx = Math.hypot(edgeX - centerX, edgeY - centerY);
+
+    return { x: centerX, y: centerY, radiusPx: ballScreenRadiusPx * BALL_STAR_RADIUS_MULTIPLIER };
+  }
+
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
@@ -511,6 +754,7 @@ export function createDiscoLights(scene) {
   function setEnabled(value) {
     enabled = value;
     discoBall.visible = value;
+    ballStarBurst.setVisible(value);
     ballLights.forEach(({ light, helper }) => {
       light.visible = value;
       if (!value) helper.visible = false;
@@ -558,5 +802,25 @@ export function createDiscoLights(scene) {
     targetBallScale = isDuet ? DUET_BALL_SCALE : SOLO_BALL_SCALE;
   }
 
-  return { update, setEnabled, setHelpersVisible, setDuetMode };
+  /**
+   * Обновляет и рисует звёздный взрыв из-за шара (см. createBallStarBurst
+   * выше) — ОТДЕЛЬНЫЙ вызов от основного update(), не слит внутрь него:
+   * у этого эффекта свой набор реактивных входов (те же самые features/
+   * strongBeat/beat/riseRate, что уже собраны в main.js для
+   * starTunnel.update() — просто передаются сюда вторым вызовом), не
+   * пересекающийся с тем, что уже принимает update() для света/масштаба
+   * шара.
+   * @param {number} delta - секунды с прошлого кадра
+   * @param {{volume:number, bass:number, mid:number, treble:number}|null} features
+   * @param {boolean} strongBeat
+   * @param {boolean} beat
+   * @param {number} riseRate
+   */
+  function updateBallStars(delta, features, strongBeat, beat, riseRate) {
+    if (!enabled) return;
+    const origin = computeBallScreenOrigin();
+    ballStarBurst.update(delta, features, strongBeat, beat, riseRate, origin);
+  }
+
+  return { update, updateBallStars, setEnabled, setHelpersVisible, setDuetMode };
 }
