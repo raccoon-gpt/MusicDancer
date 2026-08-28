@@ -416,6 +416,19 @@ export function createDiscoLights(scene) {
   let ballPulseCurrent = 1; // фактический множитель масштаба ПРЯМО СЕЙЧАС — плавно "механически" догоняет ballPulseTarget
   let ballPulseHoldTimer = 0; // сколько ещё секунд держим цель внизу, прежде чем отпустить обратно к 1
 
+  // ВРЕМЕННО (по просьбе пользователя — панель калибровки позиции/
+  // размера шара в main.js) — когда задан, ПОЛНОСТЬЮ перекрывает
+  // автоматическую логику позиции/масштаба шара ниже (соло/дуэт-переход,
+  // пульсацию под удар) — прямое ручное значение, чтобы на панели были
+  // видны точные подобранные цифры, без "дрожания" от пульса поверх них.
+  // null — обычная автоматика (как было всегда), см. использование в
+  // update() ниже.
+  let manualOverride = null;
+  /** @param {{y:number, z:number, scale:number}|null} values */
+  function setManualBallOverride(values) {
+    manualOverride = values;
+  }
+
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
@@ -462,6 +475,16 @@ export function createDiscoLights(scene) {
     discoBall.position.y += (targetBallY - discoBall.position.y) * ballEase;
     baseBallScale += (targetBallScale - baseBallScale) * ballEase;
     discoBall.scale.setScalar(baseBallScale * ballPulseCurrent);
+
+    // ВРЕМЕННО (см. setManualBallOverride выше) — если задан ручной
+    // override, ставим точные значения ПОСЛЕ автоматики, перекрывая её —
+    // так на панели калибровки видны ровно те цифры, что реально
+    // применены к шару, без искажения от пульса/переходов поверх.
+    if (manualOverride) {
+      discoBall.position.y = manualOverride.y;
+      discoBall.position.z = manualOverride.z;
+      discoBall.scale.setScalar(manualOverride.scale);
+    }
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
@@ -567,5 +590,5 @@ export function createDiscoLights(scene) {
     targetBallScale = isDuet ? DUET_BALL_SCALE : SOLO_BALL_SCALE;
   }
 
-  return { update, setEnabled, setHelpersVisible, setDuetMode };
+  return { update, setEnabled, setHelpersVisible, setDuetMode, setManualBallOverride };
 }
