@@ -389,15 +389,29 @@ export function createDiscoLights(scene) {
   // состояниями между соседними кадрами.
   const BALL_PULSE_SMOOTH_TAU = 0.15; // секунды
   let smoothedBallPulse = 0;
-  // Раньше было 0.22 (22% на пике) — по просьбе пользователя убавили,
-  // чтобы не "миллиметровое" еле заметное уменьшение (как было ещё
-  // раньше, до всех этих правок), но и не так сильно, как 0.22.
-  const BALL_PULSE_STRENGTH = 0.09;
+  // ДВЕ СТУПЕНИ вместо одной — по просьбе пользователя: обычные удары
+  // держат пульс в узком "дежурном" диапазоне 100-95% (NORMAL), и только
+  // на strongBeat (редкий акцентный удар) на короткое время расширяем
+  // потолок до 100-91% (STRONG) — глубже "просядет" именно тот момент,
+  // где и без того smoothedBallPulse (см. выше) сам по себе выше
+  // обычного (strongBeat технически и означает, что beatStrength в этот
+  // момент особенно высоко превысил порог, см. strongBeatRatio в
+  // beatDetector.js) — то есть глубокий провал автоматически попадает
+  // именно на пик, а не куда попало внутри окна.
+  const BALL_PULSE_STRENGTH_NORMAL = 0.05;
+  const BALL_PULSE_STRENGTH_STRONG = 0.09;
+  // Сколько секунд после strongBeat держим расширенный (STRONG) потолок,
+  // прежде чем вернуться к обычному NORMAL. Подобрано примерно под
+  // BALL_PULSE_SMOOTH_TAU выше (0.15с) — этого времени достаточно, чтобы
+  // сам провал успел реально дойти близко к пику и вернуться назад, но
+  // не настолько долго, чтобы захватить ещё и СЛЕДУЮЩИЙ обычный удар.
+  let strongDipWindow = 0;
+  const STRONG_DIP_WINDOW_SEC = 0.4;
 
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
-   * @param {boolean} strongBeat - был ли в этом кадре сильный удар — короткая вспышка яркости
+   * @param {boolean} strongBeat - был ли в этом кадре сильный удар — короткая вспышка яркости, и (теперь) временное расширение потолка пульсации шара, см. BALL_PULSE_STRENGTH_STRONG выше
    * @param {number} beatStrength - во сколько раз бас сейчас выше адаптивного порога beat-детектора (см. beatDetector.js, поле strength) — непрерывный сигнал для пульсации размера шара В ТАКТ песне, см. комментарий у BEAT_STRENGTH_BASELINE выше
    */
   function update(delta, intensity = 0, strongBeat = false, beatStrength = 0) {
@@ -410,6 +424,14 @@ export function createDiscoLights(scene) {
     // (см. ниже, постоянная скорость по просьбе).
     if (strongBeat) beatPulse = 1;
     beatPulse *= Math.pow(0.02, delta); // плавное, но довольно быстрое затухание вспышки
+
+    // Окно расширенного потолка (см. BALL_PULSE_STRENGTH_STRONG выше) —
+    // strongBeat включает его заново на полную длительность, а не
+    // прибавляет к остатку (иначе частые strongBeat подряд копили бы
+    // окно бесконечно и оно почти никогда не закрывалось бы).
+    if (strongBeat) strongDipWindow = STRONG_DIP_WINDOW_SEC;
+    strongDipWindow = Math.max(0, strongDipWindow - delta);
+    const ballPulseStrength = strongDipWindow > 0 ? BALL_PULSE_STRENGTH_STRONG : BALL_PULSE_STRENGTH_NORMAL;
 
     // Пульсация размера шара — см. подробное объяснение у
     // BEAT_STRENGTH_BASELINE/BALL_PULSE_SMOOTH_TAU выше.
@@ -433,9 +455,9 @@ export function createDiscoLights(scene) {
     baseBallScale += (targetBallScale - baseBallScale) * ballEase;
     // Знак минус — по просьбе пользователя пульсация УМЕНЬШАЕТ шар на
     // ударе (не увеличивает, как в первой версии) — те же самые
-    // значения (smoothedBallPulse/BALL_PULSE_STRENGTH), просто вычитаем,
+    // значения (smoothedBallPulse/ballPulseStrength), просто вычитаем,
     // а не прибавляем.
-    discoBall.scale.setScalar(baseBallScale * (1 - smoothedBallPulse * BALL_PULSE_STRENGTH));
+    discoBall.scale.setScalar(baseBallScale * (1 - smoothedBallPulse * ballPulseStrength));
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
