@@ -429,10 +429,17 @@ function createBallStarBurst(container) {
     ctx.clearRect(0, 0, width, height); // ПРОЗРАЧНЫЙ слой — накладка поверх сцены, не самостоятельный фон (в отличие от starTunnel.js)
     if (!origin) return;
 
-    // При BALL_STAR_UNLIMITED_RADIUS — тот же расчёт предельного
-    // расстояния, что и в starTunnel.js (maxZ * 0.62-масштаб радиуса,
-    // см. оригинал) — граница экрана, а не радиус шара.
-    const maxRadiusPx = BALL_STAR_UNLIMITED_RADIUS ? Math.max(width, height) * 0.75 * 0.62 : origin.radiusPx;
+    // При BALL_STAR_UNLIMITED_RADIUS — реальный видимый радиус, тот же,
+    // что и в starTunnel.js (см. пояснение ниже про 0.62) — граница
+    // экрана, а не радиус шара.
+    // ИСПРАВЛЕНО: было по ошибке *0.75*0.62 (перемножил два РАЗНЫХ
+    // коэффициента из starTunnel.js — там 0.75 это порог для maxZ,
+    // условной "глубины" до пересоздания звезды, а 0.62 — отдельный,
+    // реальный видимый радиус на экране; в моей модели своей "глубины"
+    // нет, работаем сразу в пикселях радиуса, поэтому нужен только
+    // множитель 0.62, а *0.75 — лишний, из-за него реальный радиус
+    // получался почти вдвое меньше, чем должен быть).
+    const maxRadiusPx = BALL_STAR_UNLIMITED_RADIUS ? Math.max(width, height) * 0.62 : origin.radiusPx;
 
     if (!initialized) {
       initialized = true;
