@@ -299,12 +299,189 @@ function createBallLights(scene, ball) {
   return lights;
 }
 
+// --- Мерцающие блики-звёздочки вдоль ободка шара (2D-канвас поверх сцены) ---
+//
+// ЭТО СТИЛИЗАЦИЯ, не честная физика — реальные точечные блики на
+// плитках шара уже даёт normal map + настоящие прожекторы (см.
+// createDiscoBallTextures/createBallLights выше), это ЧЕСТНЫЕ отражения.
+// А вот 4-лучевые вспышки-звёздочки (lens flare), как на референсе
+// пользователя (классический "мигающий" дискошар) — это ВСЕГДА
+// декоративный слой поверх, даже в играх/рендерах: у нас нет дешёвого
+// способа читать в реальном времени, какая именно плитка шара СЕЙЧАС
+// самая яркая (это read-back пикселей с GPU, дорого) — поэтому эти
+// звёздочки просто разбросаны вдоль проекции ободка шара на экран и
+// мерцают сами по себе (появляются/растут/гаснут), не привязаны к
+// конкретным реальным бликам. Дополняют настоящие блики, не заменяют.
+//
+// z-index — ВЫШЕ WebGL-рендерера (см. scene.js, там 2) — это акцент НА
+// поверхности шара, должен читаться поверх, а не прятаться за его
+// непрозрачной геометрией (в отличие от убранных ранее лучей/звёзд,
+// которые сознательно рисовались ПОД сценой).
+function createBallSparkles(container) {
+  const canvas = document.createElement("canvas");
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.zIndex = "3";
+  canvas.style.pointerEvents = "none";
+  canvas.style.display = "none"; // включается вместе с остальным диско-светом через setVisible
+  container.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let width = 0;
+  let height = 0;
+
+  function resize() {
+    const rect = container.getBoundingClientRect();
+    width = Math.ceil(rect.width);
+    height = Math.ceil(rect.height);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+
+  if (typeof ResizeObserver !== "undefined") {
+    let resizeRafPending = false;
+    const throttledResize = () => {
+      if (resizeRafPending) return;
+      resizeRafPending = true;
+      requestAnimationFrame(() => {
+        resizeRafPending = false;
+        resize();
+      });
+    };
+    new ResizeObserver(throttledResize).observe(container);
+  }
+
+  // Немного — это акцентные вспышки, не сплошной ковёр (референс тоже
+  // показывает буквально несколько штук за раз, не десятки).
+  const SPARKLE_COUNT = 9;
+  const sparkles = [];
+
+  /** Запускает новый цикл мерцания для одной "звёздочки": новая случайная
+   * позиция вдоль ободка/поверхности шара + новая случайная задержка
+   * перед тем, как она появится. */
+  function reset(sparkle) {
+    sparkle.angle = Math.random() * Math.PI * 2; // положение по кругу экрана вокруг центра шара
+    // 0.55..1.0 от видимого радиуса шара — большинство ближе к самому
+    // краю (ободок), но не строго на линии, немного заходят и на
+    // поверхность, как просил пользователь ("вдоль края/по поверхности").
+    sparkle.radiusFraction = 0.55 + Math.random() * 0.45;
+    sparkle.size = 5 + Math.random() * 7; // пиковый размер луча звёздочки, px
+    sparkle.rotation = Math.random() * Math.PI * 0.5; // лёгкий поворот креста — не все звёздочки строго "плюсиком"
+    sparkle.delay = Math.random() * 2.2; // секунды тишины перед тем, как звёздочка начнёт появляться
+    sparkle.age = 0; // секунды с начала текущего цикла (считая задержку)
+    // Полный цикл одной вспышки: тишина (delay) → быстрый рост → чуть
+    // более медленное угасание. cycleDuration — сколько длится
+    // рост+угасание (без учёта delay).
+    sparkle.cycleDuration = 0.5 + Math.random() * 0.6;
+  }
+  for (let i = 0; i < SPARKLE_COUNT; i++) {
+    const sparkle = {};
+    reset(sparkle);
+    sparkle.age = Math.random() * (sparkle.delay + sparkle.cycleDuration); // при первом запуске разносим по фазе — иначе все звёздочки мигали бы синхронно "залпом"
+    sparkles.push(sparkle);
+  }
+
+  /** Рисует одну 4-лучевую звёздочку (классический lens-flare "крест") —
+   * четыре вытянутых треугольных луча под 90° друг к другу плюс яркая
+   * точка в центре. */
+  function drawSparkleGlyph(x, y, size, rotation, alpha) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.globalCompositeOperation = "lighter"; // аддитивно — светлее там, где накладывается на уже яркие участки шара, не просто "закрашено сверху"
+
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    gradient.addColorStop(0.4, `rgba(255,255,255,${alpha * 0.5})`);
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+    ctx.fillStyle = gradient;
+    for (let ray = 0; ray < 4; ray++) {
+      ctx.rotate(Math.PI / 2);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(size * 0.12, size * 0.35);
+      ctx.lineTo(0, size);
+      ctx.lineTo(-size * 0.12, size * 0.35);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Яркое ядро в центре — без него крест выглядит "пустым" посередине.
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, alpha * 1.3)})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * @param {number} delta - секунды с прошлого кадра
+   * @param {{x:number, y:number, radiusPx:number}|null} origin - экранные координаты центра шара и его видимый радиус в пикселях; null — шар сейчас за камерой/сцена не готова
+   * @param {number} extraBrightness - 0..1+, дополнительная яркость поверх обычной (например, на удар) — необязательный акцент, не обязателен для самого эффекта
+   */
+  function update(delta, origin, extraBrightness = 0) {
+    if (canvas.style.display === "none") return;
+    ctx.clearRect(0, 0, width, height);
+    if (!origin) return;
+
+    for (const sparkle of sparkles) {
+      sparkle.age += delta;
+      const totalCycle = sparkle.delay + sparkle.cycleDuration;
+      if (sparkle.age >= totalCycle) {
+        reset(sparkle);
+        continue;
+      }
+      if (sparkle.age < sparkle.delay) continue; // ещё "тишина", не рисуем
+
+      const t = (sparkle.age - sparkle.delay) / sparkle.cycleDuration; // 0..1 внутри самой вспышки
+      // Быстрый рост (первые 30% цикла), более плавное угасание —
+      // классическая асимметричная форма вспышки (не треугольная
+      // симметричная), так мерцание читается резче/живее.
+      const envelope = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+      const alpha = Math.max(0, envelope) * (1 + extraBrightness * 0.4);
+      if (alpha <= 0.02) continue;
+
+      const x = origin.x + Math.cos(sparkle.angle) * origin.radiusPx * sparkle.radiusFraction;
+      const y = origin.y + Math.sin(sparkle.angle) * origin.radiusPx * sparkle.radiusFraction;
+      drawSparkleGlyph(x, y, sparkle.size * (0.5 + envelope * 0.5), sparkle.rotation, Math.min(1, alpha));
+    }
+  }
+
+  function setVisible(visible) {
+    canvas.style.display = visible ? "block" : "none";
+    if (!visible) ctx.clearRect(0, 0, width, height);
+  }
+
+  // Отдаёт уже закэшированный (обновляется через ResizeObserver, не
+  // каждый кадр) размер контейнера — createDiscoLights использует это
+  // для перевода 3D→2D проекции шара в координаты canvas, вместо того
+  // чтобы самому ещё раз дёргать getBoundingClientRect() каждый кадр.
+  function getSize() {
+    return { width, height };
+  }
+
+  return { update, setVisible, getSize };
+}
+
 /**
  * @param {THREE.Scene} scene
+ * @param {HTMLElement} container - нужен для canvas-слоя мерцающих
+ *   звёздочек на ободке шара (см. createBallSparkles).
+ * @param {THREE.PerspectiveCamera} camera - нужна, чтобы посчитать, в
+ *   какую точку ЭКРАНА (не 3D-сцены) сейчас проецируется дискошар, и
+ *   какой у него видимый на экране радиус.
  */
-export function createDiscoLights(scene) {
+export function createDiscoLights(scene, container, camera) {
   const discoBall = createDiscoBall(scene);
   const ballLights = createBallLights(scene, discoBall);
+  const ballSparkles = createBallSparkles(container);
 
   const fixtures = DISCO_COLORS.map((color, i) => {
     const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
@@ -416,6 +593,44 @@ export function createDiscoLights(scene) {
   let ballPulseCurrent = 1; // фактический множитель масштаба ПРЯМО СЕЙЧАС — плавно "механически" догоняет ballPulseTarget
   let ballPulseHoldTimer = 0; // сколько ещё секунд держим цель внизу, прежде чем отпустить обратно к 1
 
+  // Переиспользуемые объекты для computeBallScreenOrigin ниже — не
+  // создаём новый Vector3 каждый кадр только чтобы посчитать проекцию
+  // шара на экран для звёздочек на ободке.
+  const projectedCenter = new THREE.Vector3();
+  const projectedEdge = new THREE.Vector3();
+  const edgeWorldPoint = new THREE.Vector3();
+  const cameraRightVector = new THREE.Vector3();
+
+  /**
+   * Считает экранные координаты центра шара и его видимый на экране
+   * радиус (в пикселях) — нужно для звёздочек на ободке (см.
+   * createBallSparkles), которые рисуются в 2D поверх готового кадра, не
+   * как часть самой 3D-сцены. Видимый радиус получаем не приближённо, а
+   * честной проекцией ДВУХ точек — центра шара и точки на его экваторе
+   * (сдвиг на BALL_BASE_RADIUS×текущий масштаб вдоль "вправо" от
+   * камеры) — так автоматически учитывается перспектива.
+   * @returns {{x:number, y:number, radiusPx:number}|null} null — шар за
+   *   задней плоскостью отсечения камеры (в норме не бывает, но
+   *   проверка дешёвая)
+   */
+  function computeBallScreenOrigin() {
+    projectedCenter.copy(discoBall.position).project(camera);
+    if (projectedCenter.z >= 1) return null;
+
+    cameraRightVector.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    edgeWorldPoint.copy(discoBall.position).addScaledVector(cameraRightVector, discoBall.scale.x * BALL_BASE_RADIUS);
+    projectedEdge.copy(edgeWorldPoint).project(camera);
+
+    const { width, height } = ballSparkles.getSize();
+    const centerX = ((projectedCenter.x + 1) / 2) * width;
+    const centerY = ((1 - projectedCenter.y) / 2) * height;
+    const edgeX = ((projectedEdge.x + 1) / 2) * width;
+    const edgeY = ((1 - projectedEdge.y) / 2) * height;
+    const ballScreenRadiusPx = Math.hypot(edgeX - centerX, edgeY - centerY);
+
+    return { x: centerX, y: centerY, radiusPx: ballScreenRadiusPx };
+  }
+
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
@@ -462,6 +677,14 @@ export function createDiscoLights(scene) {
     discoBall.position.y += (targetBallY - discoBall.position.y) * ballEase;
     baseBallScale += (targetBallScale - baseBallScale) * ballEase;
     discoBall.scale.setScalar(baseBallScale * ballPulseCurrent);
+
+    // Мерцающие звёздочки на ободке (см. createBallSparkles выше) —
+    // считаем проекцию шара на экран заново каждый кадр (позиция/размер
+    // шара меняются: соло/дуэт-переход, сама пульсация чуть выше), и
+    // передаём beatPulse как лёгкий акцент яркости на сильный удар — тот
+    // же самый сигнал, что уже используется для вспышки прожекторов
+    // чуть ниже, просто ещё одно применение того же числа.
+    ballSparkles.update(delta, computeBallScreenOrigin(), beatPulse);
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
@@ -520,6 +743,7 @@ export function createDiscoLights(scene) {
   function setEnabled(value) {
     enabled = value;
     discoBall.visible = value;
+    ballSparkles.setVisible(value);
     ballLights.forEach(({ light, helper }) => {
       light.visible = value;
       if (!value) helper.visible = false;
