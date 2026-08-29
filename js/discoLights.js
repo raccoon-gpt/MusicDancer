@@ -46,6 +46,18 @@
  * точки с хвостами, клон starTunnel.js) — по прямой просьбе
  * пользователя УБРАН СОВСЕМ (не нужен). Если понадобится вернуть — ищи
  * в истории версий файла.
+ *
+ * ПЯТЫЙ РАУНД ПРАВОК — цветная "ударная волна" от шара (см.
+ * createBallShockwave ниже). ОТЛИЧАЕТСЯ от убранных ранее эффектов
+ * (лучи/звёзды) — не радиальные линии и не разлетающиеся частицы, а
+ * расходящиеся КОЛЬЦА (как круги на воде), по одному на каждый удар
+ * пульсации шара (тот же ballBeat, что двигает саму пульсацию 100→103→
+ * 100%) — растут наружу и гаснут фейдом, не долетая до какого-то
+ * жёсткого предела. Технически снова 2D-canvas + честная проекция
+ * позиции/видимого радиуса шара на экран (тот же принцип, что был у
+ * убранных лучей/звёзд), но НАД сценой (z-index выше рендерера) — волна
+ * должна читаться поверх всего, как настоящая ударная волна, а не
+ * прятаться за силуэтом шара.
  */
 
 import * as THREE from "three";
@@ -293,12 +305,152 @@ function createBallLights(scene, ball) {
   return lights;
 }
 
+// --- Цветная "ударная волна" от шара (2D-канвас поверх сцены) ---
+//
+// Одно кольцо на каждый удар пульсации шара (см. ballBeat в update()
+// ниже — тот же самый триггер, что двигает саму пульсацию 100→103→
+// 100%, не отдельный источник событий). Кольцо стартует чуть за краем
+// видимого силуэта шара, растёт наружу и гаснет фейдом, не долетая до
+// какого-то жёсткого предела — само угасание альфы и есть "предел".
+// Несколько колец могут существовать одновременно (частые удары —
+// новое кольцо стартует, пока предыдущее ещё не угасло), никакого
+// ограничения на "одно за раз" нет.
+//
+// z-index — ВЫШЕ WebGL-рендерера (как у убранных ранее звёздочек на
+// ободке, не как у убранных лучей/звёзд, которые были НИЖЕ) — ударная
+// волна должна читаться поверх всего, а не прятаться за силуэтом шара.
+function createBallShockwave(container) {
+  const canvas = document.createElement("canvas");
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.zIndex = "3";
+  canvas.style.pointerEvents = "none";
+  canvas.style.display = "none"; // включается вместе с остальным диско-светом через setVisible
+  container.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let width = 0;
+  let height = 0;
+
+  function resize() {
+    const rect = container.getBoundingClientRect();
+    width = Math.ceil(rect.width);
+    height = Math.ceil(rect.height);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+
+  if (typeof ResizeObserver !== "undefined") {
+    let resizeRafPending = false;
+    const throttledResize = () => {
+      if (resizeRafPending) return;
+      resizeRafPending = true;
+      requestAnimationFrame(() => {
+        resizeRafPending = false;
+        resize();
+      });
+    };
+    new ResizeObserver(throttledResize).observe(container);
+  }
+
+  const waves = []; // { radius, speed, hue, startRadius }
+  let colorIndex = 0; // по кругу через DISCO_COLORS-подобную радугу — см. spawn ниже
+
+  // Сколько всего пикселей проходит волна от старта до полного
+  // угасания — привязано к размеру экрана (та же логика, что и maxZ у
+  // starTunnel.js), не к размеру шара, чтобы волна реально успевала
+  // разлететься по сцене, а не гасла у самого шара.
+  function getTravelDistance() {
+    return Math.max(width, height) * 0.55;
+  }
+
+  /** @param {{x:number, y:number, radiusPx:number}} origin - откуда стартует новое кольцо (см. computeBallScreenOrigin в createDiscoLights) */
+  function spawn(origin) {
+    const hue = (colorIndex * 63) % 360; // 63° — не делит 360 ровно, поэтому цвета не повторяются в предсказуемом коротком цикле
+    colorIndex++;
+    const startRadius = origin.radiusPx * 0.9; // чуть ЗА краем видимого силуэта шара, не строго на нём — так волна не "режет" сам шар пополам в момент рождения
+    waves.push({
+      startX: origin.x,
+      startY: origin.y,
+      startRadius, // ЗАФИКСИРОВАНО на момент рождения — не пересчитывается по живому origin.radiusPx каждый кадр (тот сам чуть пульсирует вместе с шаром), иначе progress ниже дрожал бы вслед за пульсацией
+      radius: startRadius,
+      speed: getTravelDistance() / 1.1, // px/сек — проходит весь путь примерно за 1.1с
+      hue,
+    });
+  }
+
+  /**
+   * @param {number} delta - секунды с прошлого кадра
+   * @param {{x:number, y:number, radiusPx:number}|null} origin - см. spawn выше; null — шар сейчас за камерой/сцена не готова
+   * @param {boolean} shouldSpawn - создать ли в этом кадре новое кольцо (см. ballBeat в update())
+   */
+  function update(delta, origin, shouldSpawn) {
+    if (canvas.style.display === "none") return;
+    ctx.clearRect(0, 0, width, height);
+
+    if (shouldSpawn && origin) spawn(origin);
+    if (waves.length === 0) return;
+
+    const travelDistance = getTravelDistance();
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter"; // аддитивно — кольца светлеют друг на друге и на ярких участках сцены, а не просто закрашивают поверх
+
+    for (let i = waves.length - 1; i >= 0; i--) {
+      const wave = waves[i];
+      wave.radius += wave.speed * delta;
+      const progress = (wave.radius - wave.startRadius) / travelDistance;
+      if (progress >= 1) {
+        waves.splice(i, 1);
+        continue;
+      }
+
+      // Фейд — плавно от полной яркости к нулю по всему пути (не
+      // ступенчато) — "уходит в фейд, исчезает", как и просил
+      // пользователь.
+      const alpha = Math.max(0, 1 - progress);
+      const lineWidth = Math.max(1, 10 * (1 - progress * 0.7)); // кольцо чуть утончается по пути, не остаётся одинаковой толщины от начала до конца
+
+      ctx.strokeStyle = `hsla(${wave.hue}, 85%, 62%, ${alpha * 0.8})`;
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      ctx.arc(wave.startX, wave.startY, wave.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function setVisible(visible) {
+    canvas.style.display = visible ? "block" : "none";
+    if (!visible) {
+      ctx.clearRect(0, 0, width, height);
+      waves.length = 0; // не копим кольца, пока эффект выключен — на повторном включении не должно быть "залпа" из старых недорисованных волн
+    }
+  }
+
+  function getSize() {
+    return { width, height };
+  }
+
+  return { update, setVisible, getSize };
+}
+
 /**
  * @param {THREE.Scene} scene
+ * @param {HTMLElement} container - нужен для canvas-слоя ударной волны от шара (см. createBallShockwave).
+ * @param {THREE.PerspectiveCamera} camera - нужна, чтобы посчитать, в
+ *   какую точку ЭКРАНА (не 3D-сцены) сейчас проецируется дискошар, и
+ *   какой у него видимый на экране радиус.
  */
-export function createDiscoLights(scene) {
+export function createDiscoLights(scene, container, camera) {
   const discoBall = createDiscoBall(scene);
   const ballLights = createBallLights(scene, discoBall);
+  const ballShockwave = createBallShockwave(container);
 
   const fixtures = DISCO_COLORS.map((color, i) => {
     const light = new THREE.SpotLight(color, 0, 8, SOLO_CONE_ANGLE, 0.5, 1.2);
@@ -389,6 +541,44 @@ export function createDiscoLights(scene) {
   let ballPulseCurrent = 1; // фактический множитель масштаба ПРЯМО СЕЙЧАС — плавно "механически" догоняет ballPulseTarget
   let ballPulseHoldTimer = 0; // сколько ещё секунд держим цель внизу, прежде чем отпустить обратно к 1
 
+  // Переиспользуемые объекты для computeBallScreenOrigin ниже — не
+  // создаём новый Vector3 каждый кадр только чтобы посчитать проекцию
+  // шара на экран для ударной волны.
+  const projectedCenter = new THREE.Vector3();
+  const projectedEdge = new THREE.Vector3();
+  const edgeWorldPoint = new THREE.Vector3();
+  const cameraRightVector = new THREE.Vector3();
+
+  /**
+   * Считает экранные координаты центра шара и его видимый на экране
+   * радиус (в пикселях) — нужно для ударной волны (см.
+   * createBallShockwave), которая рисуется в 2D поверх готового кадра,
+   * не как часть самой 3D-сцены. Видимый радиус получаем не приближённо,
+   * а честной проекцией ДВУХ точек — центра шара и точки на его
+   * экваторе (сдвиг на BALL_BASE_RADIUS×текущий масштаб вдоль "вправо"
+   * от камеры) — так автоматически учитывается перспектива.
+   * @returns {{x:number, y:number, radiusPx:number}|null} null — шар за
+   *   задней плоскостью отсечения камеры (в норме не бывает, но
+   *   проверка дешёвая)
+   */
+  function computeBallScreenOrigin() {
+    projectedCenter.copy(discoBall.position).project(camera);
+    if (projectedCenter.z >= 1) return null;
+
+    cameraRightVector.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    edgeWorldPoint.copy(discoBall.position).addScaledVector(cameraRightVector, discoBall.scale.x * BALL_BASE_RADIUS);
+    projectedEdge.copy(edgeWorldPoint).project(camera);
+
+    const { width, height } = ballShockwave.getSize();
+    const centerX = ((projectedCenter.x + 1) / 2) * width;
+    const centerY = ((1 - projectedCenter.y) / 2) * height;
+    const edgeX = ((projectedEdge.x + 1) / 2) * width;
+    const edgeY = ((1 - projectedEdge.y) / 2) * height;
+    const ballScreenRadiusPx = Math.hypot(edgeX - centerX, edgeY - centerY);
+
+    return { x: centerX, y: centerY, radiusPx: ballScreenRadiusPx };
+  }
+
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {number} intensity - 0..1, "энергичность" текущего момента музыки (см. createIntensityTracker в audioAnalyzer.js) — управляет базовой яркостью
@@ -431,6 +621,11 @@ export function createDiscoLights(scene) {
     // (BALL_SCALE), пульсация (см. выше) накладывается уже ПОСЛЕ нее,
     // как отдельный множитель поверх.
     discoBall.scale.setScalar(BALL_SCALE * ballPulseCurrent);
+
+    // Ударная волна (см. createBallShockwave выше) — новое кольцо
+    // рождается ровно в тот же момент, когда ballBeat запускает саму
+    // пульсацию шара (тот же триггер, не отдельный).
+    ballShockwave.update(delta, computeBallScreenOrigin(), ballBeat);
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
@@ -489,6 +684,7 @@ export function createDiscoLights(scene) {
   function setEnabled(value) {
     enabled = value;
     discoBall.visible = value;
+    ballShockwave.setVisible(value);
     ballLights.forEach(({ light, helper }) => {
       light.visible = value;
       if (!value) helper.visible = false;
