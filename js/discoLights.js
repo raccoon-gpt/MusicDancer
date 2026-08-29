@@ -407,9 +407,18 @@ function createBallShockwave(container) {
   const ROTATION_SPEED = 0.15; // радиан/сек — постоянное вращение картинки
   const BREATH_PERIOD_SEC = 6; // секунд на полный цикл 100%→110%→100% — медленное "дыхание" картинки
   const BREATH_AMPLITUDE = 0.1; // 10%
+  // Плавное мерцание/затухание яркости — ДОПОЛНИТЕЛЬНОЕ к
+  // вращению+дыханию, по прямой просьбе пользователя: "добавит визуальный
+  // эффект проявления/исчезновения". Своя, ОТДЕЛЬНАЯ постоянная времени
+  // (не совпадает с BREATH_PERIOD_SEC) — специально, чтобы мерцание не
+  // выглядело механически синхронным с дыханием масштаба, а читалось как
+  // независимое, живое колебание.
+  const FLICKER_PERIOD_SEC = 2.5;
+  const FLICKER_MIN = 0.55; // мерцание никогда не гасит волну полностью — только колеблет яркость в диапазоне [FLICKER_MIN, 1]
 
   let rotation = 0;
   let breathPhase = 0;
+  let flickerPhase = 0; // отдельное плавное мерцание яркости — см. FLICKER_PERIOD_SEC ниже
 
   // ИСПРАВЛЕНО (по факту живого теста): раньше маска-раскрытие была
   // НАПРЯМУЮ равна pulseAmount (0..1, мгновенное значение "насколько
@@ -453,19 +462,23 @@ function createBallShockwave(container) {
     ctx.clearRect(0, 0, width, height);
     if (!origin || !imageReady) return;
 
-    // Вращение/дыхание идут ПОСТОЯННО, даже пока ни одной волны нет на
-    // экране — так каждая новая волна застаёт картинку в другом
-    // состоянии поворота/масштаба, а не всегда в одном и том же кадре.
+    // Вращение/дыхание/мерцание идут ПОСТОЯННО, даже пока ни одной волны
+    // нет на экране — так каждая новая волна застаёт картинку в другом
+    // состоянии поворота/масштаба/яркости, а не всегда в одном и том же
+    // кадре.
     rotation += ROTATION_SPEED * delta;
     breathPhase += delta;
+    flickerPhase += delta;
     const breathScale = 1 + BREATH_AMPLITUDE * (1 - Math.cos((breathPhase / BREATH_PERIOD_SEC) * Math.PI * 2)) * 0.5;
+    // 0.5 + 0.5*cos даёт диапазон [0,1], растягиваем в [FLICKER_MIN, 1].
+    const flickerFactor = FLICKER_MIN + (1 - FLICKER_MIN) * (0.5 + 0.5 * Math.cos((flickerPhase / FLICKER_PERIOD_SEC) * Math.PI * 2));
 
     if (shouldSpawn) spawnWave();
     if (waves.length === 0) return;
 
-    // "Немного больше окружности шара" — maxRadius в 1.5 раза больше
-    // видимого радиуса самого шара (baseSize — это ДИАМЕТР картинки).
-    const baseSize = origin.radiusPx * 3;
+    // "Немного больше окружности шара" — по просьбе пользователя чуть
+    // увеличили (было ×3/×1.5, стало ×3.6/×1.8) — виднее из-за шара.
+    const baseSize = origin.radiusPx * 3.6;
     const bgSize = baseSize * breathScale;
     const maxRadius = baseSize / 2;
 
@@ -486,7 +499,10 @@ function createBallShockwave(container) {
       const frontRadius = maxRadius * Math.sqrt(t); // быстрый старт, замедление к краю — см. комментарий выше
       const bandWidth = maxRadius * (0.12 + t * 0.55); // полоса расширяется по мере распространения
       const innerRadius = Math.max(0, frontRadius - bandWidth);
-      const alpha = Math.pow(Math.max(0, 1 - t), 1.4); // плавное затухание по всей жизни волны, чуть быстрее ближе к концу, чем в начале
+      // flickerFactor — тот же самый множитель, что и у постоянного
+      // мерцания выше, применяется поверх обычного затухания волны — обе
+      // причины гашения работают одновременно, независимо друг от друга.
+      const alpha = Math.pow(Math.max(0, 1 - t), 1.4) * flickerFactor;
 
       if (frontRadius <= innerRadius + 0.5) continue;
 
