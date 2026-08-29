@@ -420,7 +420,7 @@ function createBallShockwave(container) {
   // затемнение (до 0, не полупрозрачно), и ДОЛЬШЕ в тёмной фазе, чем в
   // светлой: доля периода ниже — это ДОЛЯ ВРЕМЕНИ, когда волна вообще
   // видна, остальное время (1 - эта доля) она полностью прозрачна.
-  const FLICKER_VISIBLE_FRACTION = 0.35;
+  const FLICKER_VISIBLE_FRACTION = 0.9; // было 0.35 — по просьбе пользователя тёмная фаза сократилась до 10% цикла
 
   let rotation = 0;
   let breathPhase = 0;
@@ -495,6 +495,16 @@ function createBallShockwave(container) {
     const baseSize = origin.radiusPx * 3.6;
     const bgSize = baseSize * breathScale;
     const maxRadius = baseSize / 2;
+    // Жёсткий "мёртвый" зазор от края шара наружу — по просьбе
+    // пользователя: волны должны визуально начинаться НЕ прямо от
+    // контура шара, а чуть дальше от него. Это ДОПОЛНИТЕЛЬНО к тому, что
+    // сама 3D-геометрия шара и так перекрывает волну изнутри (z-index
+    // канваса ниже рендерера, см. комментарий у z-index выше) — тот
+    // эффект прячет всё, что попадает НА сам шар, а это — явный отступ
+    // ПОСЛЕ его края, где шара уже нет, но волна ещё специально не
+    // рисуется.
+    const EDGE_GAP_PX = 5;
+    const visibleFloorRadius = origin.radiusPx + EDGE_GAP_PX;
 
     ctx.save();
     ctx.globalCompositeOperation = "lighter"; // аддитивно — светлеет поверх ярких участков сцены, не просто закрашивает
@@ -512,7 +522,10 @@ function createBallShockwave(container) {
 
       const frontRadius = maxRadius * Math.sqrt(t); // быстрый старт, замедление к краю — см. комментарий выше
       const bandWidth = maxRadius * (0.12 + t * 0.55); // полоса расширяется по мере распространения
-      const innerRadius = Math.max(0, frontRadius - bandWidth);
+      // max(..., visibleFloorRadius) — внутренний край полосы никогда не
+      // заходит ближе зазора EDGE_GAP_PX от контура шара, даже пока сама
+      // волна ещё совсем маленькая.
+      const innerRadius = Math.max(visibleFloorRadius, frontRadius - bandWidth);
       // flickerFactor — тот же самый множитель, что и у постоянного
       // мерцания выше, применяется поверх обычного затухания волны — обе
       // причины гашения работают одновременно, независимо друг от друга.
