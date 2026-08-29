@@ -425,7 +425,7 @@ function createBallShockwave(container) {
     maskCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  const ROTATION_SPEED = 9.0; // радиан/сек — было 0.45, увеличено в 20 раз по просьбе пользователя (тест)
+  const ROTATION_SPEED = 0.2; // радиан/сек — постоянное вращение картинки
   const BREATH_PERIOD_SEC = 3; // секунд на полный цикл 100%→120%→100% — по 1.5с на каждый этап
   const BREATH_AMPLITUDE = 0.2; // 20% — было 40%, по просьбе пользователя (100%→120%→100%)
   const WAVE_BASE_OPACITY = 0.9; // 90% — потолок непрозрачности волны, см. использование ниже у alpha
