@@ -53,12 +53,22 @@
  * шара (ballBeat). Пользователь показал референс (плотная
  * многослойная радужная гармонограф-волна) — процедурно так красиво
  * не нарисовать, поэтому ВТОРАЯ версия заменила кольцо на готовый PNG-
- * ассет (assets/ui/ball-shockwave.png) с тремя независимыми движениями
- * (постоянное вращение, постоянное "дыхание" масштаба, вспышка
- * кругового раскрытия на каждый удар) — подробности прямо у самой
- * функции ниже. Технически по-прежнему 2D-canvas + честная проекция
- * позиции/видимого радиуса шара на экран (тот же принцип, что был у
- * убранных лучей/звёзд), НАД сценой (z-index выше рендерера).
+ * ассет (assets/ui/ball-shockwave.png). ТРЕТЬЯ версия (текущая) —
+ * пользователь заметил, что волна видна ПОСТОЯННО (был отдельный
+ * всегда включённый фоновый слой) и что размер был огромным (×5.5 от
+ * шара) — убрали постоянный фоновый слой совсем, картинка теперь видна
+ * ТОЛЬКО через маску кругового раскрытия, напрямую завязанную на
+ * pulseAmount (0..1, тот же самый прогресс, что двигает реальный
+ * масштаб шара, см. ballPulseCurrent/BALL_PULSE_LEVEL_NORMAL в update()
+ * ниже) — не отдельный независимый таймер вспышки, как было в первой
+ * версии PNG-варианта, а честная синхронизация с самим ритмом пульса.
+ * Размер уменьшен с ×5.5 до ×2.2 от видимого радиуса шара. Вращение и
+ * "дыхание" масштаба картинки по-прежнему идут постоянно (даже пока
+ * маска закрыта) — чтобы каждое новое раскрытие заставало картинку в
+ * другом состоянии поворота, а не всегда в одном и том же кадре.
+ * Технически по-прежнему 2D-canvas + честная проекция позиции/видимого
+ * радиуса шара на экран (тот же принцип, что был у убранных лучей/
+ * звёзд), НАД сценой (z-index выше рендерера).
  */
 
 import * as THREE from "three";
@@ -381,92 +391,58 @@ function createBallShockwave(container) {
   };
   image.src = "assets/ui/ball-shockwave.png";
 
-  const ROTATION_SPEED = 0.15; // радиан/сек — постоянное вращение, независимо от ударов
-  const BREATH_PERIOD_SEC = 6; // секунд на полный цикл 100%→110%→100% — медленное "дыхание", независимо от ударов
+  const ROTATION_SPEED = 0.15; // радиан/сек — постоянное вращение картинки, не связано с ритмом раскрытия маски
+  const BREATH_PERIOD_SEC = 6; // секунд на полный цикл 100%→110%→100% — медленное "дыхание" картинки, тоже не связано с ритмом раскрытия маски
   const BREATH_AMPLITUDE = 0.1; // 10%, см. просьбу пользователя
 
   let rotation = 0;
   let breathPhase = 0;
 
-  const bursts = []; // { age, duration, hue? } — на каждый удар пульсации
-
   /**
    * @param {number} delta - секунды с прошлого кадра
    * @param {{x:number, y:number, radiusPx:number}|null} origin - см. computeBallScreenOrigin в createDiscoLights; null — шар сейчас за камерой/сцена не готова
-   * @param {boolean} shouldBurst - создать ли в этом кадре новую вспышку кругового раскрытия (см. ballBeat в update())
+   * @param {number} pulseAmount - 0..1, НАСКОЛЬКО СЕЙЧАС шар "раздут" пульсацией (0 — состояние покоя, 1 — пик пульса) — см. вызов в update() ниже: считается из ballPulseCurrent/BALL_PULSE_LEVEL_NORMAL, ТОГО ЖЕ самого значения, что двигает реальный масштаб шара. Это и есть маска: волна видна ровно настолько, насколько сейчас "раздут" шар, и полностью прячется, когда он в покое.
    */
-  function update(delta, origin, shouldBurst) {
+  function update(delta, origin, pulseAmount) {
     if (canvas.style.display === "none") return;
     ctx.clearRect(0, 0, width, height);
     if (!origin || !imageReady) return;
 
+    // Вращение/дыхание идут ПОСТОЯННО, даже пока волна спрятана (см.
+    // pulseAmount ниже) — так каждое новое раскрытие маски застаёт
+    // картинку в другом состоянии поворота/масштаба, а не всегда в
+    // одном и том же кадре анимации.
     rotation += ROTATION_SPEED * delta;
     breathPhase += delta;
-    // -cos вместо sin — чтобы старт был РОВНО 100% (не с середины
-    // цикла): при breathPhase=0 cos(0)=1, (1-1)/2=0, breathScale=1
-    // ровно. Дальше плавно 100%→110%→100%, без резкого ease-перехода
-    // (тут не ступенчатая цель, как у пульсации шара, а непрерывное
-    // "дыхание").
     const breathScale = 1 + BREATH_AMPLITUDE * (1 - Math.cos((breathPhase / BREATH_PERIOD_SEC) * Math.PI * 2)) * 0.5;
 
-    if (shouldBurst) bursts.push({ age: 0, duration: 0.7 + Math.random() * 0.3 });
+    if (pulseAmount <= 0.001) return; // маска полностью закрыта — нечего рисовать, не тратим время на clip/drawImage впустую
 
-    // Базовый размер картинки на экране — привязан к видимому радиусу
-    // шара (не к размеру экрана, в отличие от предыдущей версии кольца:
-    // тут это именно "аура вокруг шара", должна визуально принадлежать
-    // ему, а не заполнять всю сцену).
-    const baseSize = origin.radiusPx * 5.5;
+    // "Немного больше окружности шара" — было ×5.5 (гигантский размер,
+    // по факту жалобы пользователя), теперь ×2.2.
+    const baseSize = origin.radiusPx * 2.2;
+    const bgSize = baseSize * breathScale;
+    // Маска-раскрытие — РОВНО pulseAmount, тот же самый прогресс, что и
+    // у масштаба шара: растёт вместе с пульсом, схлопывается обратно в
+    // 0 вместе с его затуханием — не отдельный, независимый таймер
+    // вспышки, как было раньше.
+    const revealRadius = (baseSize / 2) * pulseAmount;
 
     ctx.save();
     ctx.globalCompositeOperation = "lighter"; // аддитивно — светлеет поверх ярких участков сцены, не просто закрашивает
-
-    // 1) Постоянный вращающийся фон.
-    ctx.save();
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, revealRadius, 0, Math.PI * 2);
+    ctx.clip();
     ctx.translate(origin.x, origin.y);
     ctx.rotate(rotation);
-    ctx.globalAlpha = 0.55;
-    const bgSize = baseSize * breathScale;
+    ctx.globalAlpha = pulseAmount; // сама яркость тоже нарастает/гаснет вместе с раскрытием — на самой границе маски картинка не обрезается резко видимым краем
     ctx.drawImage(image, -bgSize / 2, -bgSize / 2, bgSize, bgSize);
-    ctx.restore();
-
-    // 2) Вспышки кругового раскрытия — по одной на каждый удар.
-    for (let i = bursts.length - 1; i >= 0; i--) {
-      const burst = bursts[i];
-      burst.age += delta;
-      const progress = burst.age / burst.duration;
-      if (progress >= 1) {
-        bursts.splice(i, 1);
-        continue;
-      }
-      // Раскрытие — быстрее самого фейда (маска долетает до полного
-      // размера раньше, чем альфа догаснет до нуля) — иначе вспышка
-      // выглядела бы обрезанной по краю картинки в момент, когда она
-      // ещё яркая.
-      const revealProgress = Math.min(1, progress / 0.6);
-      const fadeAlpha = Math.max(0, 1 - progress);
-      const revealRadius = baseSize * 0.5 * revealProgress;
-      if (revealRadius <= 0.5) continue;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(origin.x, origin.y, revealRadius, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.translate(origin.x, origin.y);
-      ctx.rotate(rotation);
-      ctx.globalAlpha = fadeAlpha;
-      ctx.drawImage(image, -baseSize / 2, -baseSize / 2, baseSize, baseSize);
-      ctx.restore();
-    }
-
     ctx.restore();
   }
 
   function setVisible(visible) {
     canvas.style.display = visible ? "block" : "none";
-    if (!visible) {
-      ctx.clearRect(0, 0, width, height);
-      bursts.length = 0; // не копим вспышки, пока эффект выключен
-    }
+    if (!visible) ctx.clearRect(0, 0, width, height);
   }
 
   function getSize() {
@@ -658,10 +634,14 @@ export function createDiscoLights(scene, container, camera) {
     // как отдельный множитель поверх.
     discoBall.scale.setScalar(BALL_SCALE * ballPulseCurrent);
 
-    // Ударная волна (см. createBallShockwave выше) — новое кольцо
-    // рождается ровно в тот же момент, когда ballBeat запускает саму
-    // пульсацию шара (тот же триггер, не отдельный).
-    ballShockwave.update(delta, computeBallScreenOrigin(), ballBeat);
+    // Волна-маска (см. createBallShockwave выше) — pulseAmount = 0..1,
+    // тот же самый прогресс, что двигает и реальный масштаб шара
+    // (ballPulseCurrent идёт от 1 до BALL_PULSE_LEVEL_NORMAL) —
+    // нормализуем в 0..1, чтобы волна раскрывалась и пряталась В ТОЧНОСТИ
+    // синхронно с самим пульсом, а не по отдельному независимому
+    // таймеру.
+    const wavePulseAmount = (ballPulseCurrent - 1) / (BALL_PULSE_LEVEL_NORMAL - 1);
+    ballShockwave.update(delta, computeBallScreenOrigin(), wavePulseAmount);
 
     // Яркость ламп шара — та же природа масштаба, что и у прожекторов
     // персонажа (физически корректное освещение, см. подробный
