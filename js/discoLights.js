@@ -48,16 +48,17 @@
  * в истории версий файла.
  *
  * ПЯТЫЙ РАУНД ПРАВОК — цветная "ударная волна" от шара (см.
- * createBallShockwave ниже). ОТЛИЧАЕТСЯ от убранных ранее эффектов
- * (лучи/звёзды) — не радиальные линии и не разлетающиеся частицы, а
- * расходящиеся КОЛЬЦА (как круги на воде), по одному на каждый удар
- * пульсации шара (тот же ballBeat, что двигает саму пульсацию 100→103→
- * 100%) — растут наружу и гаснут фейдом, не долетая до какого-то
- * жёсткого предела. Технически снова 2D-canvas + честная проекция
+ * createBallShockwave ниже). Первая версия — процедурное КОЛЬЦО (как
+ * круги на воде, простой circle), по одному на каждый удар пульсации
+ * шара (ballBeat). Пользователь показал референс (плотная
+ * многослойная радужная гармонограф-волна) — процедурно так красиво
+ * не нарисовать, поэтому ВТОРАЯ версия заменила кольцо на готовый PNG-
+ * ассет (assets/ui/ball-shockwave.png) с тремя независимыми движениями
+ * (постоянное вращение, постоянное "дыхание" масштаба, вспышка
+ * кругового раскрытия на каждый удар) — подробности прямо у самой
+ * функции ниже. Технически по-прежнему 2D-canvas + честная проекция
  * позиции/видимого радиуса шара на экран (тот же принцип, что был у
- * убранных лучей/звёзд), но НАД сценой (z-index выше рендерера) — волна
- * должна читаться поверх всего, как настоящая ударная волна, а не
- * прятаться за силуэтом шара.
+ * убранных лучей/звёзд), НАД сценой (z-index выше рендерера).
  */
 
 import * as THREE from "three";
@@ -305,19 +306,31 @@ function createBallLights(scene, ball) {
   return lights;
 }
 
-// --- Цветная "ударная волна" от шара (2D-канвас поверх сцены) ---
+// --- Цветная "волна" от шара — готовый PNG-ассет (2D-канвас поверх сцены) ---
 //
-// Одно кольцо на каждый удар пульсации шара (см. ballBeat в update()
-// ниже — тот же самый триггер, что двигает саму пульсацию 100→103→
-// 100%, не отдельный источник событий). Кольцо стартует чуть за краем
-// видимого силуэта шара, растёт наружу и гаснет фейдом, не долетая до
-// какого-то жёсткого предела — само угасание альфы и есть "предел".
-// Несколько колец могут существовать одновременно (частые удары —
-// новое кольцо стартует, пока предыдущее ещё не угасло), никакого
-// ограничения на "одно за раз" нет.
+// ВТОРАЯ версия этого эффекта (см. историю правок) — первая была
+// процедурным кольцом (простой circle), пользователь показал референс
+// (плотная многослойная радужная гармонограф-волна) и честно сказал,
+// что процедурно так красиво не нарисовать — вместо этого используем
+// готовую картинку (assets/ui/ball-shockwave.png, загружена
+// пользователем, PNG с реальной прозрачностью — проверено заранее,
+// alpha-канал не залит одним значением).
 //
-// z-index — ВЫШЕ WebGL-рендерера (как у убранных ранее звёздочек на
-// ободке, не как у убранных лучей/звёзд, которые были НИЖЕ) — ударная
+// Три независимых движения одной и той же картинки одновременно:
+//  1. Постоянное медленное вращение — фон, всегда на экране, пока шар
+//     включён (не связано с ударами).
+//  2. Постоянное медленное "дыхание" масштаба (100%→110%→100%, плавно
+//     туда-обратно) — ТОЖЕ не связано с ударами, идёт всё время,
+//     параллельно вращению (по прямой просьбе пользователя — приближение
+//     НЕ должно быть привязано к пульсу, только вращение+дыхание сами по
+//     себе).
+//  3. На каждый удар пульсации шара (тот же ballBeat, что двигает саму
+//     пульсацию 100→103→100%) — отдельная "вспышка": круговое раскрытие
+//     (маска-круг растёт от 0 до полного изображения) + фейд к концу.
+//     Несколько вспышек могут накладываться друг на друга при частых
+//     ударах.
+//
+// z-index — ВЫШЕ WebGL-рендерера (как у предыдущей версии кольца) —
 // волна должна читаться поверх всего, а не прятаться за силуэтом шара.
 function createBallShockwave(container) {
   const canvas = document.createElement("canvas");
@@ -358,68 +371,91 @@ function createBallShockwave(container) {
     new ResizeObserver(throttledResize).observe(container);
   }
 
-  const waves = []; // { radius, speed, hue, startRadius }
-  let colorIndex = 0; // по кругу через DISCO_COLORS-подобную радугу — см. spawn ниже
+  // Грузим один раз — картинка переиспользуется каждый кадр, не
+  // перезагружается. imageReady защищает от попытки нарисовать её раньше,
+  // чем она реально загрузилась (onload асинхронный).
+  const image = new Image();
+  let imageReady = false;
+  image.onload = () => {
+    imageReady = true;
+  };
+  image.src = "assets/ui/ball-shockwave.png";
 
-  // Сколько всего пикселей проходит волна от старта до полного
-  // угасания — привязано к размеру экрана (та же логика, что и maxZ у
-  // starTunnel.js), не к размеру шара, чтобы волна реально успевала
-  // разлететься по сцене, а не гасла у самого шара.
-  function getTravelDistance() {
-    return Math.max(width, height) * 0.55;
-  }
+  const ROTATION_SPEED = 0.15; // радиан/сек — постоянное вращение, независимо от ударов
+  const BREATH_PERIOD_SEC = 6; // секунд на полный цикл 100%→110%→100% — медленное "дыхание", независимо от ударов
+  const BREATH_AMPLITUDE = 0.1; // 10%, см. просьбу пользователя
 
-  /** @param {{x:number, y:number, radiusPx:number}} origin - откуда стартует новое кольцо (см. computeBallScreenOrigin в createDiscoLights) */
-  function spawn(origin) {
-    const hue = (colorIndex * 63) % 360; // 63° — не делит 360 ровно, поэтому цвета не повторяются в предсказуемом коротком цикле
-    colorIndex++;
-    const startRadius = origin.radiusPx * 0.9; // чуть ЗА краем видимого силуэта шара, не строго на нём — так волна не "режет" сам шар пополам в момент рождения
-    waves.push({
-      startX: origin.x,
-      startY: origin.y,
-      startRadius, // ЗАФИКСИРОВАНО на момент рождения — не пересчитывается по живому origin.radiusPx каждый кадр (тот сам чуть пульсирует вместе с шаром), иначе progress ниже дрожал бы вслед за пульсацией
-      radius: startRadius,
-      speed: getTravelDistance() / 1.1, // px/сек — проходит весь путь примерно за 1.1с
-      hue,
-    });
-  }
+  let rotation = 0;
+  let breathPhase = 0;
+
+  const bursts = []; // { age, duration, hue? } — на каждый удар пульсации
 
   /**
    * @param {number} delta - секунды с прошлого кадра
-   * @param {{x:number, y:number, radiusPx:number}|null} origin - см. spawn выше; null — шар сейчас за камерой/сцена не готова
-   * @param {boolean} shouldSpawn - создать ли в этом кадре новое кольцо (см. ballBeat в update())
+   * @param {{x:number, y:number, radiusPx:number}|null} origin - см. computeBallScreenOrigin в createDiscoLights; null — шар сейчас за камерой/сцена не готова
+   * @param {boolean} shouldBurst - создать ли в этом кадре новую вспышку кругового раскрытия (см. ballBeat в update())
    */
-  function update(delta, origin, shouldSpawn) {
+  function update(delta, origin, shouldBurst) {
     if (canvas.style.display === "none") return;
     ctx.clearRect(0, 0, width, height);
+    if (!origin || !imageReady) return;
 
-    if (shouldSpawn && origin) spawn(origin);
-    if (waves.length === 0) return;
+    rotation += ROTATION_SPEED * delta;
+    breathPhase += delta;
+    // -cos вместо sin — чтобы старт был РОВНО 100% (не с середины
+    // цикла): при breathPhase=0 cos(0)=1, (1-1)/2=0, breathScale=1
+    // ровно. Дальше плавно 100%→110%→100%, без резкого ease-перехода
+    // (тут не ступенчатая цель, как у пульсации шара, а непрерывное
+    // "дыхание").
+    const breathScale = 1 + BREATH_AMPLITUDE * (1 - Math.cos((breathPhase / BREATH_PERIOD_SEC) * Math.PI * 2)) * 0.5;
 
-    const travelDistance = getTravelDistance();
+    if (shouldBurst) bursts.push({ age: 0, duration: 0.7 + Math.random() * 0.3 });
+
+    // Базовый размер картинки на экране — привязан к видимому радиусу
+    // шара (не к размеру экрана, в отличие от предыдущей версии кольца:
+    // тут это именно "аура вокруг шара", должна визуально принадлежать
+    // ему, а не заполнять всю сцену).
+    const baseSize = origin.radiusPx * 5.5;
+
     ctx.save();
-    ctx.globalCompositeOperation = "lighter"; // аддитивно — кольца светлеют друг на друге и на ярких участках сцены, а не просто закрашивают поверх
+    ctx.globalCompositeOperation = "lighter"; // аддитивно — светлеет поверх ярких участков сцены, не просто закрашивает
 
-    for (let i = waves.length - 1; i >= 0; i--) {
-      const wave = waves[i];
-      wave.radius += wave.speed * delta;
-      const progress = (wave.radius - wave.startRadius) / travelDistance;
+    // 1) Постоянный вращающийся фон.
+    ctx.save();
+    ctx.translate(origin.x, origin.y);
+    ctx.rotate(rotation);
+    ctx.globalAlpha = 0.55;
+    const bgSize = baseSize * breathScale;
+    ctx.drawImage(image, -bgSize / 2, -bgSize / 2, bgSize, bgSize);
+    ctx.restore();
+
+    // 2) Вспышки кругового раскрытия — по одной на каждый удар.
+    for (let i = bursts.length - 1; i >= 0; i--) {
+      const burst = bursts[i];
+      burst.age += delta;
+      const progress = burst.age / burst.duration;
       if (progress >= 1) {
-        waves.splice(i, 1);
+        bursts.splice(i, 1);
         continue;
       }
+      // Раскрытие — быстрее самого фейда (маска долетает до полного
+      // размера раньше, чем альфа догаснет до нуля) — иначе вспышка
+      // выглядела бы обрезанной по краю картинки в момент, когда она
+      // ещё яркая.
+      const revealProgress = Math.min(1, progress / 0.6);
+      const fadeAlpha = Math.max(0, 1 - progress);
+      const revealRadius = baseSize * 0.5 * revealProgress;
+      if (revealRadius <= 0.5) continue;
 
-      // Фейд — плавно от полной яркости к нулю по всему пути (не
-      // ступенчато) — "уходит в фейд, исчезает", как и просил
-      // пользователь.
-      const alpha = Math.max(0, 1 - progress);
-      const lineWidth = Math.max(1, 10 * (1 - progress * 0.7)); // кольцо чуть утончается по пути, не остаётся одинаковой толщины от начала до конца
-
-      ctx.strokeStyle = `hsla(${wave.hue}, 85%, 62%, ${alpha * 0.8})`;
-      ctx.lineWidth = lineWidth;
+      ctx.save();
       ctx.beginPath();
-      ctx.arc(wave.startX, wave.startY, wave.radius, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(origin.x, origin.y, revealRadius, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.translate(origin.x, origin.y);
+      ctx.rotate(rotation);
+      ctx.globalAlpha = fadeAlpha;
+      ctx.drawImage(image, -baseSize / 2, -baseSize / 2, baseSize, baseSize);
+      ctx.restore();
     }
 
     ctx.restore();
@@ -429,7 +465,7 @@ function createBallShockwave(container) {
     canvas.style.display = visible ? "block" : "none";
     if (!visible) {
       ctx.clearRect(0, 0, width, height);
-      waves.length = 0; // не копим кольца, пока эффект выключен — на повторном включении не должно быть "залпа" из старых недорисованных волн
+      bursts.length = 0; // не копим вспышки, пока эффект выключен
     }
   }
 
