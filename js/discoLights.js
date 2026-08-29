@@ -413,8 +413,14 @@ function createBallShockwave(container) {
   // (не совпадает с BREATH_PERIOD_SEC) — специально, чтобы мерцание не
   // выглядело механически синхронным с дыханием масштаба, а читалось как
   // независимое, живое колебание.
-  const FLICKER_PERIOD_SEC = 2.5;
-  const FLICKER_MIN = 0.55; // мерцание никогда не гасит волну полностью — только колеблет яркость в диапазоне [FLICKER_MIN, 1]
+  const FLICKER_PERIOD_SEC = 4.5; // было 2.5 — увеличили, чтобы затемнение реально успевало восприниматься, а не мелькало
+  // Раньше мерцание было симметричным (плавная синусоида между 0.55 и
+  // 1) — по факту едва заметно, потому что даже в "минимуме" волна всё
+  // ещё оставалась наполовину видна. По просьбе пользователя — ПОЛНОЕ
+  // затемнение (до 0, не полупрозрачно), и ДОЛЬШЕ в тёмной фазе, чем в
+  // светлой: доля периода ниже — это ДОЛЯ ВРЕМЕНИ, когда волна вообще
+  // видна, остальное время (1 - эта доля) она полностью прозрачна.
+  const FLICKER_VISIBLE_FRACTION = 0.35;
 
   let rotation = 0;
   let breathPhase = 0;
@@ -470,8 +476,16 @@ function createBallShockwave(container) {
     breathPhase += delta;
     flickerPhase += delta;
     const breathScale = 1 + BREATH_AMPLITUDE * (1 - Math.cos((breathPhase / BREATH_PERIOD_SEC) * Math.PI * 2)) * 0.5;
-    // 0.5 + 0.5*cos даёт диапазон [0,1], растягиваем в [FLICKER_MIN, 1].
-    const flickerFactor = FLICKER_MIN + (1 - FLICKER_MIN) * (0.5 + 0.5 * Math.cos((flickerPhase / FLICKER_PERIOD_SEC) * Math.PI * 2));
+    // Внутри каждого периода: первые (1-FLICKER_VISIBLE_FRACTION) доли
+    // времени — волна ПОЛНОСТЬЮ невидима (flickerFactor=0). В оставшееся
+    // время — плавный "бугорок" яркости (0→1→0) через synus, не резкий
+    // скачок.
+    const flickerLocalPhase = (flickerPhase % FLICKER_PERIOD_SEC) / FLICKER_PERIOD_SEC; // 0..1
+    const flickerDarkFraction = 1 - FLICKER_VISIBLE_FRACTION;
+    const flickerFactor =
+      flickerLocalPhase < flickerDarkFraction
+        ? 0
+        : Math.sin(((flickerLocalPhase - flickerDarkFraction) / FLICKER_VISIBLE_FRACTION) * Math.PI);
 
     if (shouldSpawn) spawnWave();
     if (waves.length === 0) return;
