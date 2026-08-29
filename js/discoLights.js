@@ -404,6 +404,27 @@ function createBallShockwave(container) {
   };
   image.src = "assets/ui/ball-shockwave.png";
 
+  // Переиспользуемый offscreen-канвас для маскирования отдельной волны
+  // (см. подробное объяснение у EDGE_FADE_PX в update() ниже) — один
+  // объект на все волны разом, просто перевыделяется под нужный размер и
+  // очищается перед каждой волной в этом же кадре (волны рисуются по
+  // очереди, не параллельно, так что делить один canvas между ними
+  // безопасно).
+  let maskCanvas = null;
+  let maskCtx = null;
+  function ensureMaskCanvas(sizeCss) {
+    if (!maskCanvas) {
+      maskCanvas = document.createElement("canvas");
+      maskCtx = maskCanvas.getContext("2d");
+    }
+    const sizeDevice = Math.ceil(sizeCss * dpr);
+    if (maskCanvas.width !== sizeDevice) {
+      maskCanvas.width = sizeDevice;
+      maskCanvas.height = sizeDevice;
+    }
+    maskCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
   const ROTATION_SPEED = 0.15; // радиан/сек — постоянное вращение картинки
   const BREATH_PERIOD_SEC = 6; // секунд на полный цикл 100%→110%→100% — медленное "дыхание" картинки
   const BREATH_AMPLITUDE = 0.1; // 10%
@@ -492,7 +513,7 @@ function createBallShockwave(container) {
 
     // "Немного больше окружности шара" — по просьбе пользователя чуть
     // увеличили (было ×3/×1.5, стало ×3.6/×1.8) — виднее из-за шара.
-    const baseSize = origin.radiusPx * 3.6;
+    const baseSize = origin.radiusPx * 3.3; // среднее между ×3 (было изначально) и ×3.6 (стало после увеличения) — по просьбе пользователя
     const bgSize = baseSize * breathScale;
     const maxRadius = baseSize / 2;
     // Жёсткий "мёртвый" зазор от края шара наружу — по просьбе
@@ -502,14 +523,25 @@ function createBallShockwave(container) {
     // канваса ниже рендерера, см. комментарий у z-index выше) — тот
     // эффект прячет всё, что попадает НА сам шар, а это — явный отступ
     // ПОСЛЕ его края, где шара уже нет, но волна ещё специально не
-    // рисуется.
-    const EDGE_GAP_PX = 5;
+    // рисуется. Было 5px, увеличили до 12px по просьбе пользователя.
+    const EDGE_GAP_PX = 12;
+    // Ширина ПЛАВНОГО перехода от полностью тёмной зоны к волне — без
+    // этого на границе EDGE_GAP_PX была бы резкая, хорошо заметная линия
+    // (обычный ctx.clip() даёт жёсткий край, 0/1, без промежуточных
+    // значений). Реализовано через отдельный offscreen-канвас (см.
+    // maskCanvas ниже) — этой волне рисуется туда изолированно, поверх
+    // накладывается радиальный градиент через
+    // globalCompositeOperation="destination-in", и только ГОТОВЫЙ
+    // результат (уже с мягким краем) переносится на основной канвас.
+    // Изоляция через отдельный канвас обязательна: destination-in стирает
+    // ВСЁ, что уже нарисовано в этой области — если делать это прямо на
+    // основном канвасе, соседняя, уже нарисованная волна в том же месте
+    // была бы случайно испорчена.
+    const EDGE_FADE_PX = 14;
     const visibleFloorRadius = origin.radiusPx + EDGE_GAP_PX;
 
     ctx.save();
     ctx.globalCompositeOperation = "lighter"; // аддитивно — светлеет поверх ярких участков сцены, не просто закрашивает
-    ctx.translate(origin.x, origin.y);
-    ctx.rotate(rotation);
 
     for (let i = waves.length - 1; i >= 0; i--) {
       const wave = waves[i];
@@ -533,19 +565,51 @@ function createBallShockwave(container) {
 
       if (frontRadius <= innerRadius + 0.5) continue;
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(0, 0, frontRadius, 0, Math.PI * 2);
+      const maskSize = Math.ceil(bgSize);
+      ensureMaskCanvas(maskSize);
+      maskCtx.clearRect(0, 0, maskSize, maskSize);
+
+      // 1) Рисуем саму картинку, обрезанную кольцом (то же самое, что и
+      // раньше — жёсткий clip по frontRadius/innerRadius), но в системе
+      // координат маски (центр — середина maskCanvas), не основного
+      // канваса.
+      maskCtx.save();
+      maskCtx.translate(maskSize / 2, maskSize / 2);
+      maskCtx.beginPath();
+      maskCtx.arc(0, 0, frontRadius, 0, Math.PI * 2);
       if (innerRadius > 0.5) {
-        // Второй контур ПРОТИВОПОЛОЖНОГО направления обхода — вырезает
-        // внутренний круг из внешнего, оставляя именно КОЛЬЦО (не
-        // залитый круг) для clip().
-        ctx.arc(0, 0, innerRadius, 0, Math.PI * 2, true);
+        maskCtx.arc(0, 0, innerRadius, 0, Math.PI * 2, true);
       }
-      ctx.clip();
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(image, -bgSize / 2, -bgSize / 2, bgSize, bgSize);
-      ctx.restore();
+      maskCtx.clip();
+      maskCtx.rotate(rotation);
+      maskCtx.globalAlpha = alpha;
+      maskCtx.drawImage(image, -bgSize / 2, -bgSize / 2, bgSize, bgSize);
+      maskCtx.restore();
+
+      // 2) Поверх — радиальный градиент через destination-in: полностью
+      // прозрачный на visibleFloorRadius, полностью непрозрачный на
+      // visibleFloorRadius+EDGE_FADE_PX — даёт плавное проявление именно
+      // у границы "мёртвой зоны", а дальше (где и так уже непрозрачно)
+      // ничего не меняет.
+      maskCtx.save();
+      maskCtx.globalCompositeOperation = "destination-in";
+      const fadeGradient = maskCtx.createRadialGradient(
+        maskSize / 2,
+        maskSize / 2,
+        visibleFloorRadius,
+        maskSize / 2,
+        maskSize / 2,
+        visibleFloorRadius + EDGE_FADE_PX
+      );
+      fadeGradient.addColorStop(0, "rgba(255,255,255,0)");
+      fadeGradient.addColorStop(1, "rgba(255,255,255,1)");
+      maskCtx.fillStyle = fadeGradient;
+      maskCtx.fillRect(0, 0, maskSize, maskSize);
+      maskCtx.restore();
+
+      // 3) Готовый (уже смягчённый по краю) результат — на основной
+      // канвас, аддитивно (см. globalCompositeOperation="lighter" выше).
+      ctx.drawImage(maskCanvas, origin.x - maskSize / 2, origin.y - maskSize / 2, maskSize, maskSize);
     }
 
     ctx.restore();
