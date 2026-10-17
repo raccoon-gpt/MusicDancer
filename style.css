@@ -131,6 +131,14 @@ html, body {
   gap: 4px;
 }
 
+/* Панель скрыта С САМОГО НАЧАЛА (в HTML стоит класс debug-off), а не прячется
+   скриптом после загрузки — иначе при старте на долю секунды мелькала.
+   Контейнер остаётся (отступы раскладки), прячется только содержимое.
+   Чтобы вернуть панель: AUDIO_DEBUG_PANEL_ENABLED = true в main.js. */
+#audio-debug.debug-off > * {
+  display: none !important;
+}
+
 #audio-debug-toggle {
   display: flex;
   align-items: center;
