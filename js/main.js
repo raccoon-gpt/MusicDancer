@@ -712,7 +712,7 @@ videoBgFileInput.addEventListener("change", () => {
   const btn = document.createElement("button");
   btn.className = "mobile-fade-btn";
   btn.textContent = "🪩";
-  btn.title = "ВРЕМЕННО: дискотечные прожекторы (тест)";
+  btn.title = "Прожекторы вкл/выкл";
   btn.style.position = "fixed";
   btn.style.top = "116px"; // под кнопкой видео (64px) — та под Settings (12px)
   btn.style.left = "12px";
@@ -728,20 +728,14 @@ videoBgFileInput.addEventListener("change", () => {
   btn.style.alignItems = "center";
   btn.style.justifyContent = "center";
   btn.style.fontSize = "18px";
-  // Три состояния по кругу (не просто вкл/выкл): свет+хелпер → свет без
-  // хелпера → выключено → снова свет+хелпер...
-  const DISCO_STATES = ["lights-and-helper", "lights-only", "off"];
-  let discoStateIndex = 2; // стартуем с "off" — первый клик сразу даёт "lights-and-helper"
+  // Простое вкл/выкл прожекторов на персонажах. Дискошар скрыт (см.
+  // SHOW_DISCO_BALL в discoLights.js), диагностические конусы не показываем.
+  let lightsOn = false;
   btn.addEventListener("click", () => {
-    discoStateIndex = (discoStateIndex + 1) % DISCO_STATES.length;
-    const state = DISCO_STATES[discoStateIndex];
-    if (state === "off") {
-      discoLights.setEnabled(false);
-    } else {
-      discoLights.setEnabled(true);
-      discoLights.setHelpersVisible(state === "lights-and-helper");
-    }
-    btn.style.background = state === "off" ? "rgba(0,0,0,0.4)" : "rgba(184,59,255,0.55)"; // лёгкая подсветка кнопки, когда свет включён (в любом из двух "включённых" состояний) — видно текущее состояние без дополнительного текста
+    lightsOn = !lightsOn;
+    discoLights.setHelpersVisible(false);
+    discoLights.setEnabled(lightsOn);
+    btn.style.background = lightsOn ? "rgba(184,59,255,0.55)" : "rgba(0,0,0,0.4)"; // подсветка кнопки, пока свет включён
   });
   document.body.appendChild(btn);
   mobileFadeButtons.push(btn);
@@ -827,9 +821,13 @@ function logBallPulse(source, detailStr) {
 // по очереди → снова "blur"... Значения ниже — финальные, подобраны и
 // присланы пользователем через временную панель настройки (см. её код
 // чуть выше, сейчас спрятана display:none, не удалена).
+// Фоновая музыкальная волна (режимы "blur" — размытая и "normal" — чёткая)
+// СКРЫТА по просьбе пользователя, но не удалена: чтобы вернуть, поставьте
+// WAVE_MODES_ENABLED = true. Пока false — в цикле кнопки их нет, и по
+// умолчанию открывается "off" (обычный фон сцены).
+const WAVE_MODES_ENABLED = false;
 const WAVE_MODE_ORDER = [
-  "blur",
-  "normal",
+  ...(WAVE_MODES_ENABLED ? ["blur", "normal"] : []),
   "off",
   "startunnel",
   ...DEFAULT_BG_VIDEOS.map((_, i) => `video_${i}`),
@@ -839,7 +837,7 @@ const MODE_SETTINGS = {
   normal: { maxBarHeightFraction: 0.2, barCount: 50, barGapFraction: 0.5, widthFraction: 0.7, blurPct: 0 },
   // "off"/"video_N" ничего из этого не используют — просто прячут волну целиком.
 };
-let waveModeIndex = 0; // 0="blur" — размытие включено по умолчанию
+let waveModeIndex = 0; // первый режим из WAVE_MODE_ORDER (сейчас "off"; с включённой волной — "blur")
 
 // Масштаб (transform:scale) — ТОЛЬКО для режима blur, и ТОЛЬКО на
 // мобильном (тот же порог 480px, что и в @media в style.css — держим
@@ -1552,7 +1550,8 @@ const DANCE_LABELS = {
   hiphop_1: { ENG: "Hip-Hop 1", UKR: "Хіп-хоп 1", RU: "Хип-хоп 1" },
   hiphop_2: { ENG: "Hip-Hop 2", UKR: "Хіп-хоп 2", RU: "Хип-хоп 2" },
   hiphop_3: { ENG: "Hip-Hop 3", UKR: "Хіп-хоп 3", RU: "Хип-хоп 3" },
-  hiphop_4: { ENG: "Hip-Hop 4", UKR: "Хіп-хоп 4", RU: "Хип-хоп 4" },
+  // id остался hiphop_4 (имя файла), но на кнопке — "3": клип hiphop_3 убран из меню
+  hiphop_4: { ENG: "Hip-Hop 3", UKR: "Хіп-хоп 3", RU: "Хип-хоп 3" },
   hiphop_7: { ENG: "Hip-Hop 7", UKR: "Хіп-хоп 7", RU: "Хип-хоп 7" },
   // Единственный "хипхоп"-клип у енота — без цифры и в имени файла
   // (hiphop.fbx), и в id, и на кнопке.
@@ -1622,7 +1621,8 @@ const CHARACTERS = {
     animationFiles: [
       ["assets/animations-fbx/hiphop_1.fbx", "hiphop_1"],
       ["assets/animations-fbx/hiphop_2.fbx", "hiphop_2"],
-      ["assets/animations-fbx/hiphop_3.fbx", "hiphop_3"],
+      // hiphop_3.fbx оставлен в assets, но убран из меню белки (по просьбе
+      // пользователя); бывший hiphop_4 на кнопке теперь называется "Хип-хоп 3".
       ["assets/animations-fbx/hiphop_4.fbx", "hiphop_4"],
       ["assets/animations-fbx/samba.fbx", "samba"],
       ["assets/animations-fbx/silly.fbx", "silly"],

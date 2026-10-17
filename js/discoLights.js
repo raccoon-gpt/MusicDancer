@@ -642,6 +642,13 @@ function createBallShockwave(container) {
  *   какую точку ЭКРАНА (не 3D-сцены) сейчас проецируется дискошар, и
  *   какой у него видимый на экране радиус.
  */
+// Дискошар (сам шар, его белые лампы-прожекторы и цветная волна) СКРЫТ по
+// просьбе пользователя, но не удалён: поставьте true, чтобы вернуть.
+// Пока false, лампы шара тоже выключены — иначе они подсвечивали бы
+// персонажей без видимой причины. Цветные прожекторы на персонажах
+// работают как раньше.
+const SHOW_DISCO_BALL = false;
+
 export function createDiscoLights(scene, container, camera) {
   const discoBall = createDiscoBall(scene);
   const ballLights = createBallLights(scene, discoBall);
@@ -880,12 +887,12 @@ export function createDiscoLights(scene, container, camera) {
   /** Включает/выключает разом все прожекторы (и диагностические конусы вместе с ними). */
   function setEnabled(value) {
     enabled = value;
-    discoBall.visible = value;
-    ballShockwave.setVisible(value);
+    const ballOn = value && SHOW_DISCO_BALL;
+    discoBall.visible = ballOn;
+    ballShockwave.setVisible(ballOn);
     ballLights.forEach(({ light, helper }) => {
-      light.visible = value;
-      if (!value) helper.visible = false;
-      else helper.visible = helpersVisible;
+      light.visible = ballOn;
+      helper.visible = ballOn && helpersVisible;
     });
     fixtures.forEach(({ light, helper }) => {
       light.visible = value;
@@ -906,7 +913,7 @@ export function createDiscoLights(scene, container, camera) {
     helpersVisible = value;
     if (!enabled) return; // при выключенном свете хелперы и так скрыты — нечего обновлять
     ballLights.forEach(({ helper }) => {
-      helper.visible = value;
+      helper.visible = value && SHOW_DISCO_BALL;
     });
     fixtures.forEach(({ helper }) => {
       helper.visible = value;
