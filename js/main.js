@@ -1098,6 +1098,9 @@ audioDebugToggleBtn.addEventListener("click", () => {
 // не вызывается каждый кадр, не тратит ресурсы на обновление невидимых
 // полос.
 const AUDIO_DEBUG_PANEL_ENABLED = false;
+if (AUDIO_DEBUG_PANEL_ENABLED) {
+  document.getElementById("audio-debug")?.classList.remove("debug-off"); // см. #audio-debug.debug-off в style.css
+}
 if (!AUDIO_DEBUG_PANEL_ENABLED) {
   audioDebugToggleBtn.style.display = "none";
   audioDebugToggleBtn.setAttribute("aria-expanded", "false");
