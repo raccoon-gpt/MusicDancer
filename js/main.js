@@ -1499,6 +1499,9 @@ async function ensureAnalyzerReady() {
 }
 
 playBtn.addEventListener("click", async () => {
+  // Короткая вибрация телефона (Android/Chrome). Вызывать нужно сразу при
+  // нажатии, до await. iOS Safari Vibration API не поддерживает — там просто нет эффекта.
+  try { navigator.vibrate?.(15); } catch (_) {}
   await ensureAnalyzerReady();
   player.togglePlay();
 });
