@@ -3,7 +3,7 @@
  * Всё остальное (модели, анимации, видео, mp3, Three.js с unpkg) — кэшируется
  * при первом использовании, дальше работает офлайн.
  * Чтобы выкатить обновление: поменяйте VERSION. */
-const VERSION = "v7";
+const VERSION = "v8";
 const SHELL_CACHE = "md-shell-" + VERSION;
 const RUNTIME_CACHE = "md-runtime-" + VERSION;
 const CDN = [
