@@ -13,7 +13,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #15171c;
+  background: #050d19;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -23,6 +23,15 @@ html, body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  /* Атмосферный фон: глубокий сине-чёрный (#050D19) + синий оттенок
+     сверху (глубина вокруг сцены) + мягкое голубое свечение в центре/
+     ниже центра (за названием трека, танцами и Play) + ровный тёмный
+     низ, чтобы элементы управления хорошо читались. Слои — сверху вниз. */
+  background:
+    linear-gradient(180deg, rgba(5, 13, 25, 0) 74%, rgba(5, 13, 25, 0.85) 100%),
+    radial-gradient(ellipse 80% 30% at 50% 76%, rgba(70, 170, 255, 0.30) 0%, rgba(40, 110, 200, 0.14) 45%, rgba(5, 13, 25, 0) 100%),
+    radial-gradient(ellipse 120% 45% at 50% 0%, rgba(30, 90, 175, 0.55) 0%, rgba(15, 50, 105, 0.22) 55%, rgba(5, 13, 25, 0) 100%),
+    #050d19;
 }
 
 /* #mobile-top-area обёртка добавлена ради мобильной шторки списка (см.
@@ -50,7 +59,7 @@ html, body {
      с синим оттенком) вместо того же #0d0d0d, что рисует волна в
      остальных режимах — разные цвета в разных режимах смотрелись как
      будто фон "мигает" между режимами. */
-  background: #0d0d0d;
+  background: transparent; /* был #0d0d0d — теперь сквозь пустую сцену виден общий градиент #app */
   /* Явно создаёт свой stacking context — чтобы z-index у дочерних
      канвасов (WebGL-рендерер и Sound Circle Wave, см. soundCircleWave.js
      и scene.js) сравнивались только друг с другом, не утекая наружу к
@@ -80,7 +89,7 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 18px;
-  background: #16181e;
+  background: #050d19;
   z-index: 5;
   transition: opacity 300ms ease;
 }
@@ -205,8 +214,8 @@ html, body {
   position: relative; /* якорь для абсолютно позиционированного #avatar-picker */
   flex: 0 0 auto;
   padding: 10px 16px;
-  background: #1b1e25;
-  border-top: 1px solid #262a33;
+  background: rgba(6, 16, 31, 0.45);
+  border-top: 1px solid rgba(90, 160, 255, 0.14);
 }
 
 #character-stack {
@@ -459,8 +468,8 @@ html, body {
   flex-direction: column;
   gap: 10px;
   padding: 14px 16px 16px;
-  background: linear-gradient(180deg, #1c1f27 0%, #16181e 100%);
-  border-top: 1px solid #262a33;
+  background: linear-gradient(180deg, rgba(6, 16, 31, 0.45) 0%, rgba(5, 13, 25, 0.9) 100%);
+  border-top: 1px solid rgba(90, 160, 255, 0.14);
 }
 
 #player-transport {
