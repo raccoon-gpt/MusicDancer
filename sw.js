@@ -3,7 +3,7 @@
  * Всё остальное (модели, анимации, видео, mp3, Three.js с unpkg) — кэшируется
  * при первом использовании, дальше работает офлайн.
  * Чтобы выкатить обновление: поменяйте VERSION. */
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL_CACHE = "md-shell-" + VERSION;
 const RUNTIME_CACHE = "md-runtime-" + VERSION;
 const CDN = [
@@ -106,6 +106,20 @@ self.addEventListener("fetch", (event) => {
       }).catch(() => caches.match("index.html"))
     );
     return;
+  }
+
+  // Плейлист по умолчанию: список (playlist.json) — сначала сеть, офлайн из кэша;
+  // сами mp3 не кэшируем — приложение само копирует их в IndexedDB.
+  if (sameOrigin && url.pathname.includes("/assets/default-playlist/")) {
+    if (url.pathname.endsWith("playlist.json")) {
+      event.respondWith(
+        fetch(req).then((res) => {
+          if (res.ok) { const copy = res.clone(); caches.open(RUNTIME_CACHE).then((c) => c.put(req, copy)); }
+          return res;
+        }).catch(() => caches.match(req.url).then((c) => c || new Response('{"tracks":[]}', { headers: { "Content-Type": "application/json" } })))
+      );
+    }
+    return; // mp3 — обычный запрос в сеть, без кэша service worker
   }
 
   // Код оболочки: stale-while-revalidate (быстро + подтягивает свежее).

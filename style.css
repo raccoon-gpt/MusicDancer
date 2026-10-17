@@ -1276,6 +1276,22 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     cursor: pointer;
   }
 
+  #playlists-popup-restore-btn {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: transparent;
+    color: #d6d9e0;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  #playlists-popup-restore-btn:disabled {
+    opacity: 0.5;
+  }
+
   #playlists-popup-name-row:not([hidden]) {
     display: flex;
   }
