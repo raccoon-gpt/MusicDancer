@@ -826,7 +826,14 @@ function logBallPulse(source, detailStr) {
 // WAVE_MODES_ENABLED = true. Пока false — в цикле кнопки их нет, и по
 // умолчанию открывается "off" (обычный фон сцены).
 const WAVE_MODES_ENABLED = false;
+// СЦЕНЫ — готовые сочетания "видео + PNG-слой сверху" (PNG лежит над
+// видео и под персонажами). Сцена 1 — по умолчанию (первая в цикле).
+// Новая сцена = ещё одна запись здесь + PNG в assets/scenes/.
+const SCENES = [
+  { id: "scene_1", video: "assets/bg-videos/11108.mp4", overlay: "assets/scenes/scene-1.png" },
+];
 const WAVE_MODE_ORDER = [
+  ...SCENES.map((s) => s.id),
   ...(WAVE_MODES_ENABLED ? ["blur", "normal"] : []),
   "off",
   "startunnel",
@@ -837,7 +844,7 @@ const MODE_SETTINGS = {
   normal: { maxBarHeightFraction: 0.2, barCount: 50, barGapFraction: 0.5, widthFraction: 0.7, blurPct: 0 },
   // "off"/"video_N" ничего из этого не используют — просто прячут волну целиком.
 };
-let waveModeIndex = 0; // первый режим из WAVE_MODE_ORDER (сейчас "off"; с включённой волной — "blur")
+let waveModeIndex = 0; // первый режим из WAVE_MODE_ORDER — сейчас сцена 1
 
 // Масштаб (transform:scale) — ТОЛЬКО для режима blur, и ТОЛЬКО на
 // мобильном (тот же порог 480px, что и в @media в style.css — держим
@@ -855,6 +862,29 @@ function updateWaveScaleForViewport() {
 }
 window.addEventListener("resize", updateWaveScaleForViewport);
 
+// PNG-слой текущей сцены (отдельный от bgOverlayEl, который загружает
+// пользователь кнопкой 🎬). Создаётся один раз, z-index как у bgOverlayEl.
+let sceneOverlayEl = null;
+function showSceneOverlay(src) {
+  if (!sceneOverlayEl) {
+    sceneOverlayEl = document.createElement("img");
+    sceneOverlayEl.style.position = "absolute";
+    sceneOverlayEl.style.top = "-1px";
+    sceneOverlayEl.style.left = "-1px";
+    sceneOverlayEl.style.width = "calc(100% + 2px)";
+    sceneOverlayEl.style.height = "calc(100% + 2px)";
+    sceneOverlayEl.style.objectFit = "cover";
+    sceneOverlayEl.style.zIndex = "1";
+    sceneOverlayEl.style.pointerEvents = "none";
+    sceneOverlayEl.style.borderRadius = "inherit";
+    sceneOverlayEl.addEventListener("error", () => { sceneOverlayEl.style.display = "none"; }); // PNG ещё не залит — показываем только видео
+    container.appendChild(sceneOverlayEl);
+  }
+  const absolute = new URL(src, location.href).href;
+  if (sceneOverlayEl.src !== absolute) sceneOverlayEl.src = src;
+  sceneOverlayEl.style.display = "block";
+}
+
 function applyWaveMode(mode) {
   // Сброс — каждый режим явно решает, что показать, остальное прячем.
   // Дефолтное фоновое видео, кастомные загруженные видео/фото (кнопка 🎬)
@@ -867,6 +897,7 @@ function applyWaveMode(mode) {
   }
   if (videoBgEl) videoBgEl.style.display = "none";
   if (bgImageEl) bgImageEl.style.display = "none";
+  if (sceneOverlayEl) sceneOverlayEl.style.display = "none";
   starTunnel.setVisible(false);
 
   if (mode === "blur" || mode === "normal") {
@@ -881,7 +912,17 @@ function applyWaveMode(mode) {
     return;
   }
 
-  soundWave.setVisible(false); // и "off", и "startunnel", и "video_N" — обычная волна не видна
+  soundWave.setVisible(false); // и "off", и "startunnel", и "video_N", и сцены — обычная волна не видна
+
+  const scene = SCENES.find((s) => s.id === mode);
+  if (scene) {
+    const absoluteVideo = new URL(scene.video, location.href).href;
+    if (defaultVideoBgEl.src !== absoluteVideo) defaultVideoBgEl.src = scene.video;
+    defaultVideoBgEl.style.display = "block";
+    defaultVideoBgEl.play().catch(() => {});
+    showSceneOverlay(scene.overlay);
+    return;
+  }
 
   if (mode === "off") {
     // Ничего дополнительно показывать не нужно — собственный фон
