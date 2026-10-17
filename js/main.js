@@ -1021,6 +1021,7 @@ const playlistsPopupOverlay = document.getElementById("playlists-popup-overlay")
 const playlistsPopupClose = document.getElementById("playlists-popup-close");
 const playlistsPopupList = document.getElementById("playlists-popup-list");
 const playlistsPopupCreateBtn = document.getElementById("playlists-popup-create-btn");
+const playlistsPopupRestoreBtn = document.getElementById("playlists-popup-restore-btn");
 const playlistsPopupNameRow = document.getElementById("playlists-popup-name-row");
 const playlistsPopupNameInput = document.getElementById("playlists-popup-name-input");
 const playlistsPopupNameConfirm = document.getElementById("playlists-popup-name-confirm");
@@ -2817,6 +2818,23 @@ playlistsPopupOverlay.addEventListener("click", (e) => {
 // открываем стандартный выбор файлов (тот же fileInput, что и "+Add") —
 // pendingNewPlaylistName сигнализирует обработчику fileInput, что это
 // СОЗДАНИЕ нового плейлиста, а не добавление к текущему.
+playlistsPopupRestoreBtn.addEventListener("click", async () => {
+  playlistsPopupRestoreBtn.disabled = true;
+  try {
+    let pl = await findDefaultPlaylist();
+    if (!pl) pl = await createDefaultPlaylistRecord();
+    if (pl.id !== activePlaylistId) await loadPlaylistIntoUI(pl);
+    const added = await syncDefaultPlaylist({ restoreAll: true });
+    await renderPlaylistsPopupList();
+    playlistsPopupRestoreBtn.textContent = `${t("restoreDone")}: ${added}`;
+    setTimeout(() => { playlistsPopupRestoreBtn.textContent = t("restoreDefault"); }, 2000);
+  } catch (err) {
+    console.warn("[main] Restore default failed:", err);
+  } finally {
+    playlistsPopupRestoreBtn.disabled = false;
+  }
+});
+
 playlistsPopupCreateBtn.addEventListener("click", () => {
   pendingRenamePlaylistId = null; // на случай если до этого начинали переименование, но не завершили
   playlistsPopupNameRow.hidden = false;
@@ -2889,6 +2907,7 @@ function applyTranslations() {
   document.getElementById("playlists-popup-title").textContent = t("playlists");
   playlistsPopupClose.setAttribute("aria-label", t("close"));
   playlistsPopupCreateBtn.textContent = t("newPlaylist");
+  playlistsPopupRestoreBtn.textContent = t("restoreDefault");
   playlistsPopupNameInput.placeholder = t("playlistNamePlaceholder");
   playlistsPopupNameConfirm.textContent = pendingRenamePlaylistId !== null ? t("rename") : t("next");
   document.getElementById("settings-popup-title").textContent = t("settings");
@@ -2949,14 +2968,120 @@ async function persistActivePlaylist() {
   await playlistStorage.updatePlaylistTrackIds(activePlaylistId, ids);
 }
 
+// --- Плейлист по умолчанию ---
+// Файлы лежат в assets/default-playlist/ (список имён — playlist.json,
+// обновляется автоматически GitHub Action'ом, см. README.txt в той папке).
+// При первом запуске треки копируются в IndexedDB. Новые файлы, которые
+// добавили в папку позже, подтягиваются сами. Треки, удалённые
+// пользователем, сами не возвращаются — только кнопкой "Restore default".
+const DEFAULT_PLAYLIST_NAME = "Default Playlist";
+const DEFAULT_PLAYLIST_DIR = "assets/default-playlist/";
+const DEFAULT_PLAYLIST_ID_KEY = "defaultPlaylistId";
+const DEFAULT_KNOWN_TRACKS_KEY = "defaultKnownTracks";
+
+function loadKnownDefaultTracks() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DEFAULT_KNOWN_TRACKS_KEY) || "[]"));
+  } catch (_) {
+    return new Set();
+  }
+}
+function saveKnownDefaultTracks(set) {
+  try { localStorage.setItem(DEFAULT_KNOWN_TRACKS_KEY, JSON.stringify([...set])); } catch (_) {}
+}
+
+async function fetchDefaultManifest() {
+  try {
+    const res = await fetch(DEFAULT_PLAYLIST_DIR + "playlist.json", { cache: "no-cache" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.tracks) ? data.tracks.filter((n) => typeof n === "string") : [];
+  } catch (_) {
+    return []; // офлайн/нет файла — просто нечего подтягивать
+  }
+}
+
+/** Находит запись плейлиста по умолчанию (по сохранённому id, затем по имени). */
+async function findDefaultPlaylist() {
+  const savedId = Number(localStorage.getItem(DEFAULT_PLAYLIST_ID_KEY));
+  if (savedId) {
+    const pl = await playlistStorage.getPlaylist(savedId);
+    if (pl) return pl;
+  }
+  const all = await playlistStorage.getAllPlaylists();
+  const byName = all.find((p) => p.name === DEFAULT_PLAYLIST_NAME);
+  if (byName) localStorage.setItem(DEFAULT_PLAYLIST_ID_KEY, String(byName.id));
+  return byName || null;
+}
+
+async function createDefaultPlaylistRecord() {
+  const id = await playlistStorage.createPlaylist(DEFAULT_PLAYLIST_NAME, []);
+  localStorage.setItem(DEFAULT_PLAYLIST_ID_KEY, String(id));
+  return playlistStorage.getPlaylist(id);
+}
+
+let defaultSyncRunning = false;
+
+/** Докачивает треки из папки по умолчанию в плейлист по умолчанию.
+ * restoreAll=false — только новые (ещё не виденные) файлы;
+ * restoreAll=true — все, которых сейчас нет в плейлисте (кнопка Restore).
+ * Возвращает число добавленных треков. */
+async function syncDefaultPlaylist({ restoreAll = false } = {}) {
+  if (defaultSyncRunning) return 0;
+  defaultSyncRunning = true;
+  let added = 0;
+  try {
+    const manifest = await fetchDefaultManifest();
+    let pl = await findDefaultPlaylist();
+    if (!pl) {
+      // Пользователь удалил плейлист по умолчанию — сам при старте не воскрешаем, только по Restore.
+      if (!restoreAll) return 0;
+      pl = await createDefaultPlaylistRecord();
+    }
+    const known = loadKnownDefaultTracks();
+
+    const present = new Set();
+    for (const id of pl.trackIds) {
+      const rec = await playlistStorage.getTrack(id);
+      if (rec) present.add(rec.name);
+    }
+
+    for (const name of manifest) {
+      if (present.has(name)) { known.add(name); continue; }
+      if (!restoreAll && known.has(name)) continue; // пользователь удалил — не возвращаем сам
+      try {
+        const res = await fetch(DEFAULT_PLAYLIST_DIR + encodeURIComponent(name));
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        const { title, artist } = parseTrackName(name);
+        const trackId = await playlistStorage.addTrack(blob, name, title, artist);
+        pl.trackIds = [...pl.trackIds, trackId];
+        await playlistStorage.updatePlaylistTrackIds(pl.id, pl.trackIds);
+        known.add(name);
+        added++;
+        if (pl.id === activePlaylistId) {
+          // Активный плейлист — дописываем трек в видимый список, не сбрасывая текущее воспроизведение.
+          const file = new File([blob], name, { type: blob.type || "audio/mpeg" });
+          const wasEmpty = playlist.length === 0;
+          playlist = playlist.concat([{ id: trackId, file, name, title, artist }]);
+          renderPlaylistList();
+          if (wasEmpty) loadTrackAtIndex(0);
+        }
+      } catch (err) {
+        console.warn("[main] Не удалось загрузить трек по умолчанию:", name, err);
+      }
+    }
+    saveKnownDefaultTracks(known);
+  } finally {
+    defaultSyncRunning = false;
+  }
+  return added;
+}
+
 /** Запускается один раз при загрузке страницы: поднимает ранее активный
- * плейлист из IndexedDB (если есть — переживает перезагрузку страницы,
- * ради этого всё и затевалось), либо, при самом первом визите вообще
- * (или если сохранённый плейлист не нашёлся — например, очистили данные
- * сайта), создаёт "Дефолт плейлист" с вшитым тестовым треком. С этого
- * момента ВСЁ, включая этот тестовый трек, живёт в общем хранилище
- * одинаково — не нужно отдельно поддерживать "особый" случай без
- * активного плейлиста вообще, он есть всегда.
+ * плейлист из IndexedDB (если есть), иначе создаёт плейлист по умолчанию
+ * и наполняет его треками из assets/default-playlist/. После показа
+ * плейлиста в фоне подтягиваются новые файлы из папки по умолчанию.
  */
 async function bootstrapPlaylist() {
   const savedId = localStorage.getItem(ACTIVE_PLAYLIST_STORAGE_KEY);
@@ -2965,6 +3090,7 @@ async function bootstrapPlaylist() {
       const pl = await playlistStorage.getPlaylist(Number(savedId));
       if (pl) {
         await loadPlaylistIntoUI(pl);
+        syncDefaultPlaylist();
         return;
       }
     } catch (err) {
@@ -2973,14 +3099,10 @@ async function bootstrapPlaylist() {
   }
 
   try {
-    const response = await fetch("assets/default-track.mp3");
-    const blob = await response.blob();
-    const name = "Dorofeeva - Додайте світла (minus).mp3";
-    const { title, artist } = parseTrackName(name);
-    const trackId = await playlistStorage.addTrack(blob, name, title, artist);
-    const plId = await playlistStorage.createPlaylist("Default Playlist", [trackId]);
-    const plRecord = await playlistStorage.getPlaylist(plId);
-    await loadPlaylistIntoUI(plRecord);
+    let pl = await findDefaultPlaylist();
+    if (!pl) pl = await createDefaultPlaylistRecord();
+    await loadPlaylistIntoUI(pl);
+    syncDefaultPlaylist();
   } catch (err) {
     console.warn("[main] Не удалось создать дефолтный плейлист:", err);
   }
