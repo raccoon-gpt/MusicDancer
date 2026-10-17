@@ -3197,7 +3197,6 @@ function renderLoop() {
   // период (для debug-лога).
   let steadyBeatThisFrame = false;
   let steadyPeriodSecThisFrame = 0.5;
-  let steadyConfidentThisFrame = false; // накопилось ли достаточно реальных интервалов, чтобы доверять periodSec — см. confident в createSteadyTempoTracker
   let riseRateThisFrame = 0; // скорость нарастания громкости — для starTunnel
   let intensityThisFrame = 0; // для debug-панели ниже (та же величина, что уже видят персонажи)
   let featuresThisFrame = null; // для starTunnel.update() ниже — те же фичи, что уже читает этот кадр для персонажей/эквалайзера, не считаем повторно
@@ -3263,7 +3262,6 @@ function renderLoop() {
     const steadyResult = steadyTempoTracker.update(delta, beat, intensity);
     steadyBeatThisFrame = steadyResult.tick;
     steadyPeriodSecThisFrame = steadyResult.periodSec;
-    steadyConfidentThisFrame = steadyResult.confident;
 
     const activeEntries = Object.entries(slots);
 
@@ -3375,41 +3373,11 @@ function renderLoop() {
       }
     }
 
-    // ВРЕМЕННО-неВременно (по просьбе пользователя — "добавить steady-
-    // tempo персонажам, не заменяя текущую логику") — коэффициент темпа
-    // ДОБАВЛЯЕТСЯ поверх уже существующей intensity-логики скорости
-    // танца (см. animationController.js reactToAudio), не вместо неё.
-    // Использует ТОТ ЖЕ САМЫЙ трекер, что и шар (steadyTempoTracker,
-    // historySize 6) — изначально заводили для этого отдельный
-    // экземпляр (у шара тогда было 8, персонажам хотели 6), но по
-    // итогам обсуждения решили, что 6 подходит и шару тоже — один общий
-    // трекер снова, отдельный убрали.
-    //
-    // ОДНОСТОРОННЕ — только замедление, без ускорения: потолок 1 (не
-    // 1.25, как было раньше) — по прямой просьбе пользователя: на
-    // средних/быстрых треках персонажи и так уже хорошо двигались,
-    // ускорять сверху не нужно, только придерживать на медляках. Нижняя
-    // граница чуть снижена (0.85 → 0.8) — "ещё немного медленнее" по
-    // той же просьбе.
-    //
-    // steadyConfidentThisFrame — пока трекер не набрал достаточно
-    // реальных интервалов (см. confident в createSteadyTempoTracker),
-    // periodSec ещё близок к стартовому "нейтральному" значению и может
-    // быть недостоверным — на медленных треках это давало эффект
-    // "танцует быстрее первые 10-15 секунд, потом наконец
-    // замедляется" (см. обсуждение с пользователем). Пока !confident —
-    // держим tempoFactor=1 (нейтрально), не подмешивая ещё недостоверную
-    // оценку.
-    const DANCE_TEMPO_NEUTRAL_BPM = 120;
-    const bpm = 60 / steadyPeriodSecThisFrame;
-    const tempoFactor = steadyConfidentThisFrame ? Math.min(1, Math.max(0.8, bpm / DANCE_TEMPO_NEUTRAL_BPM)) : 1;
-
     activeEntries.forEach(([id, slot]) => {
       if (!slot.animController) return;
       slot.animController.reactToAudio({
         intensity,
         delta,
-        tempoFactor,
       });
 
       // Фиолетовая подсветка кнопки того танца, который играет ПРЯМО

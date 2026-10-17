@@ -222,15 +222,8 @@ export function createAnimationController(mixer, clips, model) {
 
   /**
    * Главная точка входа — вызывается каждый кадр, пока трек играет.
-   * @param {number} tempoFactor - 0.85..1.25, ДОПОЛНИТЕЛЬНЫЙ множитель
-   *   скорости поверх обычной intensity-логики ниже (см. main.js —
-   *   считается из steadyTempoTracker, той же оценки темпа, что уже
-   *   двигает пульсацию дискошара). 1 — нейтрально, ничего не меняет
-   *   (совпадает с поведением до этой правки). НЕ ЗАМЕНЯЕТ intensity-
-   *   логику, а домножается поверх неё — по прямой просьбе пользователя
-   *   добавить steady-tempo, не убирая то, что уже было.
    */
-  function reactToAudio({ intensity, delta, tempoFactor = 1 }) {
+  function reactToAudio({ intensity, delta }) {
     const rawTier = computeTier(intensity, lastTier);
 
     let tier = lastTier;
@@ -269,11 +262,7 @@ export function createAnimationController(mixer, clips, model) {
       }
     }
 
-    // tempoFactor — ДОПОЛНИТЕЛЬНЫЙ множитель поверх intensity-логики
-    // (см. JSDoc у reactToAudio выше), не замена. При tempoFactor=1
-    // (нейтральный темп ~120 BPM, либо музыка не играет) формула
-    // полностью совпадает с тем, что было до этой правки.
-    const targetTimeScale = (tuning.minTimeScale + intensity * tuning.maxTimeScaleBonus) * tempoFactor;
+    const targetTimeScale = (tuning.minTimeScale + intensity * tuning.maxTimeScaleBonus);
     smoothedTimeScale +=
       (targetTimeScale - smoothedTimeScale) *
       (1 - Math.exp(-delta / tuning.timeScaleSmoothingTau));
