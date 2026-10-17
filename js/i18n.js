@@ -17,6 +17,7 @@ export const translations = {
   playlists: { ENG: "Playlists", UKR: "Плейлисти", RU: "Плейлисты" },
   close: { ENG: "Close", UKR: "Закрити", RU: "Закрыть" },
   newPlaylist: { ENG: "+ New Playlist", UKR: "+ Новий плейлист", RU: "+ Новый плейлист" },
+  defaultPlaylist: { ENG: "Default Playlist", UKR: "Плейлист за замовчуванням", RU: "Плейлист по умолчанию" },
   restoreDefault: { ENG: "Restore default tracks", UKR: "Повернути треки за замовчуванням", RU: "Вернуть треки по умолчанию" },
   restoreDone: { ENG: "Restored", UKR: "Повернено", RU: "Возвращено" },
   playlistNamePlaceholder: { ENG: "Playlist name", UKR: "Назва плейлиста", RU: "Название плейлиста" },

@@ -2750,8 +2750,16 @@ fileInput.addEventListener("change", async () => {
 playlistAddBtn.addEventListener("click", () => fileInput.click());
 
 // --- Попап "Плейлисты" ---
+// В базе стандартный плейлист хранится под служебным именем "Default Playlist" —
+// в интерфейсе показываем его на текущем языке. Переименованные пользователем
+// плейлисты показываются как есть.
+let activePlaylistName = "";
+function displayPlaylistName(name) {
+  return name === "Default Playlist" ? t("defaultPlaylist") : name;
+}
 function updatePlaylistsButtonLabel(name) {
-  playlistsBtn.textContent = name;
+  activePlaylistName = name;
+  playlistsBtn.textContent = displayPlaylistName(name);
 }
 
 async function renderPlaylistsPopupList() {
@@ -2769,7 +2777,7 @@ async function renderPlaylistsPopupList() {
     const selectBtn = document.createElement("button");
     selectBtn.type = "button";
     selectBtn.className = "playlists-popup-item-select";
-    selectBtn.textContent = `${pl.name} (${pl.trackIds.length})`;
+    selectBtn.textContent = `${displayPlaylistName(pl.name)} (${pl.trackIds.length})`;
     selectBtn.addEventListener("click", async () => {
       await loadPlaylistIntoUI(pl);
       closePlaylistsPopup();
@@ -2828,7 +2836,7 @@ let pendingRenamePlaylistId = null;
 function startRenamePlaylist(pl) {
   pendingRenamePlaylistId = pl.id;
   playlistsPopupNameRow.hidden = false;
-  playlistsPopupNameInput.value = pl.name;
+  playlistsPopupNameInput.value = displayPlaylistName(pl.name);
   playlistsPopupNameInput.focus();
   // Курсор в конце названия, без выделения всего текста — раньше
   // .select() выделял всё, из-за чего первое же нажатие любой клавиши
@@ -2964,6 +2972,7 @@ function applyTranslations() {
   // Список плейлистов в попапе — там же и aria-label крестика/карандаша
   // (deleteTrackAria и т.п.) у каждой строки, проще перерисовать заново
   // целиком, чем точечно менять атрибуты у уже существующих элементов.
+  if (activePlaylistName) playlistsBtn.textContent = displayPlaylistName(activePlaylistName); // подпись кнопки плейлиста тоже на новом языке
   renderPlaylistsPopupList();
   // Синие кнопки танцев (Hip-Hop/Samba/...) — тоже нужно перерисовать,
   // иначе смена языка обновит остальной интерфейс сразу, а эти кнопки —
