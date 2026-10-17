@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>3D Music Dancer</title>
+
+  <!-- PWA: установка как приложение -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#15171c" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Music Dancer" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="style.css" />
 
   <!-- Three.js через importmap (ES modules, без бандлера) -->
@@ -187,5 +197,13 @@
   </div>
 
   <script type="module" src="js/main.js"></script>
+  <script>
+    // Регистрация service worker (нужен HTTPS или localhost)
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW:", e));
+      });
+    }
+  </script>
 </body>
 </html>
