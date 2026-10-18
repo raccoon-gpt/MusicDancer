@@ -830,8 +830,8 @@ const WAVE_MODES_ENABLED = false;
 // видео и под персонажами). Сцена 1 — по умолчанию (первая в цикле).
 // Новая сцена = ещё одна запись здесь + PNG в assets/scenes/.
 const SCENES = [
-  { id: "scene_1", video: "assets/bg-videos/11108.mp4", overlay: "assets/scenes/scene-1.png" },
-  { id: "scene_2", video: "assets/bg-videos/11101.mp4", overlay: "assets/scenes/scene-2.png" },
+  { id: "scene_1", video: "assets/bg-videos/11108.mp4", overlay: "assets/scenes/scene-1.png", thumb: "assets/scenes/thumb-1.jpg" },
+  { id: "scene_2", video: "assets/bg-videos/11101.mp4", overlay: "assets/scenes/scene-2.png", thumb: "assets/scenes/thumb-2.jpg" },
 ];
 const WAVE_MODE_ORDER = [
   ...SCENES.map((s) => s.id),
@@ -886,7 +886,50 @@ function showSceneOverlay(src) {
   sceneOverlayEl.style.display = "block";
 }
 
+// Превьюшки сцен (квадратные кнопки над панелью танцев). Картинки —
+// scene.thumb (jpg; если не найден — пробуем png, иначе номер сцены).
+const scenePickerEl = document.getElementById("scene-picker");
+const scenePickerButtons = new Map(); // scene.id -> button
+function setupScenePicker() {
+  if (!scenePickerEl) return;
+  SCENES.forEach((scene, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "scene-thumb";
+    btn.title = `Сцена ${i + 1}`;
+    btn.setAttribute("aria-label", `Сцена ${i + 1}`);
+    const num = document.createElement("span");
+    num.className = "scene-thumb-num";
+    num.textContent = String(i + 1);
+    btn.appendChild(num);
+    const img = document.createElement("img");
+    img.alt = "";
+    img.draggable = false;
+    let triedPng = false;
+    img.addEventListener("error", () => {
+      if (!triedPng && /\.jpe?g$/i.test(scene.thumb)) {
+        triedPng = true;
+        img.src = scene.thumb.replace(/\.jpe?g$/i, ".png");
+      } else {
+        img.remove(); // превью ещё не залито — остаётся номер сцены
+      }
+    });
+    img.src = scene.thumb;
+    btn.appendChild(img);
+    btn.addEventListener("click", () => {
+      waveModeIndex = WAVE_MODE_ORDER.indexOf(scene.id);
+      applyWaveMode(scene.id);
+    });
+    scenePickerEl.appendChild(btn);
+    scenePickerButtons.set(scene.id, btn);
+  });
+}
+function updateScenePickerActive(mode) {
+  scenePickerButtons.forEach((btn, id) => btn.classList.toggle("is-active", id === mode));
+}
+
 function applyWaveMode(mode) {
+  updateScenePickerActive(mode);
   // Сброс — каждый режим явно решает, что показать, остальное прячем.
   // Дефолтное фоновое видео, кастомные загруженные видео/фото (кнопка 🎬)
   // и звёздный туннель — все взаимоисключающие с волной и друг с другом
@@ -951,6 +994,7 @@ function applyWaveMode(mode) {
   defaultVideoBgEl.style.display = "block";
   defaultVideoBgEl.play().catch(() => {}); // на всякий случай, если автоплей не подхватился сам после смены display
 }
+setupScenePicker();
 applyWaveMode(WAVE_MODE_ORDER[waveModeIndex]);
 
 (function setupWaveModeToggle() {
@@ -1997,6 +2041,9 @@ function renderCharacterStack() {
       });
     }
     row.appendChild(avatarBtn);
+    // Меню выбора соло/пары встаёт прямо в строку, между аватаркой и танцами:
+    // танцы сдвигаются вправо (строка прокручивается), меню их не перекрывает.
+    if (index === 0 && pickerOpen) row.appendChild(avatarPickerEl);
 
     const buttonsRow = document.createElement("div");
     buttonsRow.className = "dance-buttons-row";
