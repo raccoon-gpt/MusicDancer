@@ -3338,7 +3338,10 @@ window.addEventListener("resize", () => redrawProgressVisual());
 function renderLoop() {
   requestAnimationFrame(renderLoop);
 
-  const delta = clock.getDelta();
+  // Ограничиваем delta: после "залипшего" кадра (iPhone, тяжёлая сцена,
+  // возврат из фона) getDelta() может вернуть сотни мс, и анимации/таймеры
+  // делали бы рывок вперёд — выглядело как "ускорение танцев".
+  const delta = Math.min(clock.getDelta(), 0.1);
   let smartCameraDrivingThisFrame = false;
   let spectrumBarsThisFrame = null;
   let strongBeatThisFrame = false;

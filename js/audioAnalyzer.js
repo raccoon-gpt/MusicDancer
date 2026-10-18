@@ -19,7 +19,26 @@ const TREBLE_MAX_HZ = 12000;
  */
 export function createAudioAnalyzer(audioElement) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  const audioCtx = new AudioContextClass();
+  // latencyHint:"playback" — большие аудио-буферы: на iPhone (Safari) при
+  // нагрузке на страницу (3D + видео-фон) маленькие буферы по умолчанию
+  // дают "зажёвывание"/ускорение звука; нам низкая задержка не нужна,
+  // мы только проигрываем файл и анализируем его.
+  let audioCtx;
+  try {
+    audioCtx = new AudioContextClass({ latencyHint: "playback" });
+  } catch (_) {
+    audioCtx = new AudioContextClass();
+  }
+  // iOS может перевести контекст в "interrupted"/"suspended" (звонок,
+  // уведомление, смена наушников, сворачивание) — пока трек играет,
+  // возвращаем его в работу, иначе звук рвётся или сбивается.
+  const resumeIfPlaying = () => {
+    if (!audioElement.paused && audioCtx.state !== "running") audioCtx.resume().catch(() => {});
+  };
+  audioCtx.addEventListener?.("statechange", resumeIfPlaying);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) resumeIfPlaying();
+  });
 
   // ВАЖНО: createMediaElementSource можно вызвать только ОДИН раз на элемент —
   // поэтому createAudioAnalyzer тоже должен вызываться один раз за всё приложение.
