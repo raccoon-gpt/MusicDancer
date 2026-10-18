@@ -419,6 +419,73 @@ html, body {
   }
 }
 
+/* --- Превьюшки сцен --- */
+#scene-picker {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 10px 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#scene-picker::-webkit-scrollbar { display: none; }
+/* Свободное место между названием трека и панелью танцев занимает сам ряд */
+#scene-picker { margin-top: auto; }
+#scene-picker + #dance-controls { margin-top: 0; }
+
+.scene-thumb {
+  --thumb-size: min(64px, calc((100vw - 40px - 40px) / 5));
+  flex: 0 0 auto;
+  position: relative;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  padding: 0;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(160deg, #12305f 0%, #081326 100%);
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.scene-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.scene-thumb-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 18px;
+  font-weight: 700;
+}
+.scene-thumb.is-active {
+  border-color: #5a7fff;
+  box-shadow: 0 0 0 1px rgba(90, 127, 255, 0.55), 0 0 14px rgba(90, 160, 255, 0.45);
+}
+
+/* Меню соло/пары — теперь в строке первого персонажа, между аватаркой и танцами */
+.character-row > #avatar-picker {
+  position: static;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  flex: 0 0 auto;
+}
+
 /* Всплывающее меню выбора персонажа(ей) — открывается ВВЕРХ от верхней
    аватарки, может выходить за пределы панели и накладываться на сцену. */
 #avatar-picker {
