@@ -831,6 +831,7 @@ const WAVE_MODES_ENABLED = false;
 // Новая сцена = ещё одна запись здесь + PNG в assets/scenes/.
 const SCENES = [
   { id: "scene_1", video: "assets/bg-videos/11108.mp4", overlay: "assets/scenes/scene-1.png" },
+  { id: "scene_2", video: "assets/bg-videos/11101.mp4", overlay: "assets/scenes/scene-2.png" },
 ];
 const WAVE_MODE_ORDER = [
   ...SCENES.map((s) => s.id),
