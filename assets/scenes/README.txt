@@ -1,8 +1,9 @@
 СЦЕНЫ (видео + PNG сверху)
 ==========================
 Сцена 1:  видео assets/bg-videos/11108.mp4  +  PNG assets/scenes/scene-1.png
+Сцена 2:  видео assets/bg-videos/11101.mp4  +  PNG assets/scenes/scene-2.png
 
-Положите свой PNG (с прозрачностью) сюда под именем scene-1.png.
+Положите свой PNG (с прозрачностью) сюда под именем scene-1.png / scene-2.png.
 Пока файла нет — сцена показывает только видео.
 
 Новая сцена = ещё одна строка в массиве SCENES в js/main.js
