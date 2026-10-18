@@ -1839,7 +1839,17 @@ window.jerrySlots = slots; // debug: jerrySlots.squirrel.animController.play("sa
 // --- Состояние выбора персонажа(ей) ---
 // activeCharacterIds — порядок важен: первый элемент = "верхняя" панель,
 // её аватарка кликабельна и открывает пикер заново (в том числе в дуэте).
-let activeCharacterIds = ["squirrel"];
+// ВРЕМЕННО отключено по просьбе пользователя (код сохранён, чтобы вернуть):
+//  - CUSTOM_CHARACTER_ENABLED: загрузка своего персонажа (кнопка "+" в меню
+//    выбора) и подъём ранее сохранённого кастомного персонажа;
+//  - DUET_MULTI_SELECT_ENABLED: выбор любого набора персонажей для пары с
+//    подтверждающей галочкой. Пока false — кнопка "Пара" сразу включает
+//    белку+енота, а в режиме пары кнопки "Пара" в меню нет.
+const CUSTOM_CHARACTER_ENABLED = false;
+const DUET_MULTI_SELECT_ENABLED = false;
+// Состав пары и сцена по умолчанию (первый — верхняя панель танцев).
+const PAIR_CHARACTER_IDS = ["squirrel", "raccoon"];
+let activeCharacterIds = [...PAIR_CHARACTER_IDS];
 let pickerOpen = false;
 let pickerMode = "switch"; // "switch" — переключить соло; "select" — множественный выбор
 let pendingSelection = new Set();
@@ -2058,6 +2068,7 @@ function renderPicker() {
     // одному из двух танцующих означает "теперь танцует только он") — клик
     // сразу переключает на соло с этим персонажем.
     Object.entries(CHARACTERS).forEach(([id, config]) => {
+      if (id === "custom" && !CUSTOM_CHARACTER_ENABLED) return;
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "picker-avatar-btn";
@@ -2086,7 +2097,7 @@ function renderPicker() {
     uploadBtn.style.fontSize = "22px";
     uploadBtn.style.color = "#8a8f98";
     uploadBtn.addEventListener("click", () => customCharacterFileInput.click());
-    avatarPickerEl.appendChild(uploadBtn);
+    if (CUSTOM_CHARACTER_ENABLED) avatarPickerEl.appendChild(uploadBtn);
   } else {
     // "select" — показываем ВСЕХ персонажей, каждый togglable по
     // pendingSelection, плюс иконка Duet для подтверждения.
@@ -2113,6 +2124,25 @@ function renderPicker() {
       });
       avatarPickerEl.appendChild(btn);
     });
+  }
+
+  // Упрощённый режим (DUET_MULTI_SELECT_ENABLED = false): кнопка "Пара" есть
+  // только в соло и сразу включает белку+енота, без выбора и галочки; в
+  // режиме пары её нет — вернуться к соло можно кликом по аватарке.
+  if (!DUET_MULTI_SELECT_ENABLED) {
+    if (activeCharacterIds.length >= 2) return;
+    const pairBtn = document.createElement("button");
+    pairBtn.type = "button";
+    pairBtn.className = "picker-duet-btn";
+    pairBtn.title = "Duet";
+    pairBtn.textContent = t("partners");
+    pairBtn.addEventListener("click", () => {
+      activeCharacterIds = [...PAIR_CHARACTER_IDS];
+      closePicker();
+      applyActiveCharacters();
+    });
+    avatarPickerEl.appendChild(pairBtn);
+    return;
   }
 
   const duetBtn = document.createElement("button");
@@ -3329,7 +3359,7 @@ async function restoreCustomCharacter() {
 // на него автоматически — раньше делали именно так, но по факту
 // оказалось не тем, что нужно (см. обсуждение).
 (async function initCharacters() {
-  await restoreCustomCharacter();
+  if (CUSTOM_CHARACTER_ENABLED) await restoreCustomCharacter();
   applyActiveCharacters();
 })();
 
